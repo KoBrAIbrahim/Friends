@@ -429,13 +429,17 @@ export default function InventoryMainPage() {
       });
   }, [products, filterType, searchQuery, sortOrder]);
 
-  const productTypes = [
-    { value: "all", label: "كل الأنواع" },
-    { value: "مشروبات باردة", label: "مشروبات باردة" },
-    { value: "مشروبات ساخنة", label: "مشروبات ساخنة" },
-    { value: "تسالي", label: "تسالي" },
-    { value: "شوكلاطة", label: "شوكلاطة" }
-  ];
+const productTypes = [
+  { value: "all", label: "كل الأنواع" },
+  { value: "مشروبات باردة", label: "مشروبات باردة" },
+  { value: "مشروبات ساخنة", label: "مشروبات ساخنة" },
+  { value: "تسالي", label: "تسالي" },
+  { value: "شوكلاطة", label: "شوكلاطة" },
+  { value: "مأكولات", label: "مأكولات" },
+  { value: "ميلك شيك", label: "ميلك شيك" },
+  { value: "موهيتو", label: "موهيتو" }
+];
+
 
   const sortOptions = [
     { value: "none", label: "بدون ترتيب" },

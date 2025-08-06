@@ -110,7 +110,7 @@ export default function AddProductPage() {
       gap: "8px",
       fontSize: "14px",
       fontWeight: "600",
-      color: "#374151",
+      color: "#374151", 
       marginBottom: "8px"
     },
     labelIcon: {
@@ -180,7 +180,10 @@ export default function AddProductPage() {
     { value: "مشروبات باردة", label: "مشروبات باردة" },
     { value: "مشروبات ساخنة", label: "مشروبات ساخنة" },
     { value: "تسالي", label: "تسالي" },
-    { value: "شوكلاطة", label: "شوكلاطة" }
+    { value: "شوكلاطة", label: "شوكلاطة" },
+      { value: "مأكولات", label: "مأكولات" },
+    { value: "ميلك شيك", label: "ميلك شيك" },
+  { value: "موهيتو", label: "موهيتو" }
   ];
 
   const formFields = [
