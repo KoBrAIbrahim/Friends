@@ -35,31 +35,138 @@ export default function BilliardsMainPage() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setTimers(prev => ({ ...prev }));
+      setTimers(prev => {
+        const newTimers = { ...prev };
+        let hasChanges = false;
 
-      Object.entries(timers).forEach(([tableId, timer]) => {
-        if (timer.type === "fixed") {
-          const now = Date.now();
-          const elapsed = now - timer.startedAt;
-          if (elapsed >= timer.duration * 60000 && !timer.alerted) {
-            showCustomAlert(`انتهى الوقت المحدد للطاولة رقم ${timer.table_number}`);
-            setTimers(prev => ({
-              ...prev,
-              [tableId]: { ...prev[tableId], alerted: true }
-            }));
+        Object.entries(prev).forEach(([tableId, timer]) => {
+          if (timer.paused) return;
+
+          newTimers[tableId] = {
+            ...timer,
+            lastTick: Date.now(),
+          };
+          hasChanges = true;
+
+          if (timer.type === "fixed") {
+            const elapsed = calculateElapsedTime(timer);
+            if (elapsed >= timer.duration * 60000 && !timer.alerted) {
+              showCustomAlert(`انتهى الوقت المحدد للطاولة رقم ${timer.table_number}`);
+              newTimers[tableId].alerted = true;
+            }
           }
+        });
+
+        return hasChanges ? newTimers : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // دالة لحساب الوقت المنقضي
+  const calculateElapsedTime = (timer) => {
+    if (!timer.startedAt) return 0;
+    
+    const now = Date.now();
+    const totalTime = now - timer.startedAt;
+    
+    // احسب مجموع الوقت المتوقف
+    let totalPausedTime = 0;
+    if (timer.pauseHistory && timer.pauseHistory.length > 0) {
+      timer.pauseHistory.forEach(pause => {
+        if (pause.endTime) {
+          // فترة إيقاف مكتملة
+          totalPausedTime += pause.endTime - pause.startTime;
+        } else if (timer.paused) {
+          // فترة إيقاف حالية
+          totalPausedTime += now - pause.startTime;
         }
       });
-
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [timers]);
+    }
+    
+    return Math.max(totalTime - totalPausedTime, 0);
+  };
 
   const fetchTables = async () => {
     const q = query(collection(db, "peli_tables"), orderBy("table_number"));
     const snapshot = await getDocs(q);
     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setTables(data);
+  };
+
+  const togglePause = async (tableId) => {
+    const timer = timers[tableId];
+    if (!timer) return;
+
+    // احصل على أحدث جلسة للطاولة
+    const snapshot = await getDocs(collection(db, "sessions"));
+    const sessions = snapshot.docs
+      .filter(doc => doc.data().table_id === tableId && !doc.data().end_time)
+      .sort((a, b) => b.data().start_time?.seconds - a.data().start_time?.seconds);
+
+    const latestSession = sessions[0];
+    if (!latestSession) return;
+
+    const sessionRef = doc(db, "sessions", latestSession.id);
+    const now = Date.now();
+
+    setTimers(prev => {
+      const current = prev[tableId];
+      if (!current) return prev;
+
+      let newPauseHistory = [...(current.pauseHistory || [])];
+
+      if (current.paused) {
+        // استئناف - أغلق آخر فترة إيقاف
+        if (newPauseHistory.length > 0) {
+          const lastPause = newPauseHistory[newPauseHistory.length - 1];
+          if (!lastPause.endTime) {
+            lastPause.endTime = now;
+          }
+        }
+
+        const updated = {
+          ...current,
+          paused: false,
+          pauseHistory: newPauseHistory
+        };
+
+        // تحديث في Firebase
+        updateDoc(sessionRef, {
+          paused: false,
+          pauseHistory: newPauseHistory,
+        });
+
+        return {
+          ...prev,
+          [tableId]: updated
+        };
+      } else {
+        // إيقاف مؤقت - ابدأ فترة إيقاف جديدة
+        newPauseHistory.push({
+          startTime: now,
+          endTime: null
+        });
+
+        const updated = {
+          ...current,
+          paused: true,
+          pauseHistory: newPauseHistory
+        };
+
+        // تحديث في Firebase
+        updateDoc(sessionRef, {
+          paused: true,
+          pauseHistory: newPauseHistory,
+        });
+
+        return {
+          ...prev,
+          [tableId]: updated
+        };
+      }
+    });
   };
 
   const loadTimersFromFirestore = async () => {
@@ -69,14 +176,19 @@ export default function BilliardsMainPage() {
       .filter(session => !session.end_time);
 
     const loadedTimers = {};
+    
     activeSessions.forEach(session => {
       const tableId = session.table_id;
       if (!session.start_time) return;
+
       loadedTimers[tableId] = {
         startedAt: session.start_time.toDate().getTime(),
         type: session.session_type,
         duration: session.duration,
         table_number: null,
+        paused: session.paused || false,
+        pauseHistory: session.pauseHistory || [],
+        lastTick: Date.now(),
       };
     });
 
@@ -101,6 +213,8 @@ export default function BilliardsMainPage() {
       pay_status: false,
       session_type: sessionType,
       duration: sessionType === "fixed" ? Number(duration) : null,
+      paused: false,
+      pauseHistory: [],
     };
 
     await addDoc(collection(db, "sessions"), newSession);
@@ -115,6 +229,9 @@ export default function BilliardsMainPage() {
         type: sessionType,
         duration: sessionType === "fixed" ? Number(duration) : null,
         table_number: table.table_number,
+        paused: false,
+        pauseHistory: [],
+        lastTick: now,
       }
     }));
 
@@ -139,7 +256,10 @@ export default function BilliardsMainPage() {
     }
 
     const now = new Date();
-    const totalTime = Math.floor((now - startTime) / 60000);
+    const timer = timers[table.id];
+    const elapsedMs = calculateElapsedTime(timer);
+    const totalTime = Math.floor(elapsedMs / 60000);
+
     const price = parseFloat(table.price_per_hour || 0);
     const totalPrice = ((price / 60) * totalTime).toFixed(2);
 
@@ -285,6 +405,20 @@ export default function BilliardsMainPage() {
   };
 
   const getButtonStyle = (variant, disabled) => {
+    if (variant === "pause") {
+      return {
+        backgroundColor: "#f59e0b",
+        color: "white",
+        padding: "12px 16px",
+        borderRadius: "6px",
+        border: "none",
+        fontSize: "14px",
+        fontWeight: "600",
+        cursor: "pointer",
+        flex: 1
+      };
+    }
+
     if (disabled) {
       return {
         backgroundColor: "#e5e7eb",
@@ -546,8 +680,7 @@ export default function BilliardsMainPage() {
           let timeDisplay = "";
 
           if (isActive && timer) {
-            const now = Date.now();
-            const elapsedMs = now - timer.startedAt;
+            const elapsedMs = calculateElapsedTime(timer);
             const minutes = Math.floor(elapsedMs / 60000);
             const seconds = Math.floor((elapsedMs % 60000) / 1000);
 
@@ -582,9 +715,17 @@ export default function BilliardsMainPage() {
 
               {/* Timer Display */}
               {isActive && (
-                <div style={timerDisplayStyle}>
-                  {timeDisplay}
-                </div>
+                <>
+                  <div style={timerDisplayStyle}>
+                    {timeDisplay}
+                  </div>
+
+                  {timer?.paused && (
+                    <div style={{ textAlign: "center", color: "#f59e0b", fontWeight: "600" }}>
+                      (موقوف مؤقتاً)
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Action Buttons */}
@@ -602,6 +743,13 @@ export default function BilliardsMainPage() {
                   style={getButtonStyle("end", !isActive)}
                 >
                   أغلق
+                </button>
+
+                <button
+                  onClick={() => togglePause(table.id)}
+                  disabled={!isActive}
+                  style={getButtonStyle("pause", !isActive)}>
+                  {timers[table.id]?.paused ? "استئناف" : "إيقاف مؤقت"}
                 </button>
               </div>
             </div>

@@ -181,9 +181,12 @@ export default function AddProductPage() {
     { value: "مشروبات ساخنة", label: "مشروبات ساخنة" },
     { value: "تسالي", label: "تسالي" },
     { value: "شوكلاطة", label: "شوكلاطة" },
-      { value: "مأكولات", label: "مأكولات" },
+    { value: "مأكولات", label: "مأكولات" },
     { value: "ميلك شيك", label: "ميلك شيك" },
-  { value: "موهيتو", label: "موهيتو" }
+    { value: "موهيتو", label: "موهيتو" },
+    { value: "أراجيل", label: "أراجيل" },
+    { value: "سموذي", label: "سموذي" },
+    { value: "مشروبات طبيعية", label: "مشروبات طبيعية" }
   ];
 
   const formFields = [
