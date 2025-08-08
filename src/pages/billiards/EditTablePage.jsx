@@ -8,6 +8,7 @@ export default function EditTablePage() {
   const [tables, setTables] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
   const [newPrice, setNewPrice] = useState("");
+  const [newStatus, setNewStatus] = useState(""); // إضافة state للحالة الجديدة
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [tableToDelete, setTableToDelete] = useState(null);
@@ -34,9 +35,11 @@ export default function EditTablePage() {
     if (!selectedTable) return;
     await updateDoc(doc(db, "peli_tables", selectedTable.id), {
       price_per_hour: parseFloat(newPrice),
+      status: newStatus // إضافة تحديث الحالة
     });
     setSelectedTable(null);
     setNewPrice("");
+    setNewStatus(""); // إعادة تعيين الحالة
     fetchTables();
   };
 
@@ -318,7 +321,7 @@ export default function EditTablePage() {
     margin: 0
   };
 
-  const currentPriceDisplayStyle = {
+  const currentInfoDisplayStyle = {
     backgroundColor: "#f8fafc",
     padding: "16px",
     borderRadius: "6px",
@@ -326,16 +329,17 @@ export default function EditTablePage() {
     border: "1px solid #e2e8f0"
   };
 
-  const currentPriceLabelStyle = {
+  const currentInfoLabelStyle = {
     fontSize: "14px",
     color: "#64748b",
     marginBottom: "4px"
   };
 
-  const currentPriceValueStyle = {
-    fontSize: "20px",
+  const currentInfoValueStyle = {
+    fontSize: "18px",
     fontWeight: "700",
-    color: "#A2AF9B"
+    color: "#A2AF9B",
+    marginBottom: "8px"
   };
 
   const inputGroupStyle = {
@@ -469,7 +473,7 @@ export default function EditTablePage() {
       <div style={instructionsCardStyle}>
         <div style={instructionsIconStyle}>💡</div>
         <p style={instructionsTextStyle}>
-          اضغط تعديل لتغيير السعر أو حذف لإزالة الطاولة
+          اضغط تعديل لتغيير السعر والحالة أو حذف لإزالة الطاولة
         </p>
       </div>
 
@@ -517,6 +521,7 @@ export default function EditTablePage() {
                 onClick={() => {
                   setSelectedTable(table);
                   setNewPrice(table.price_per_hour || "");
+                  setNewStatus(table.status || "active"); // إضافة تعيين الحالة الحالية
                 }}
                 style={editButtonStyle}
               >
@@ -543,22 +548,25 @@ export default function EditTablePage() {
           <div style={modalContentStyle}>
             {/* Modal Header */}
             <div style={modalHeaderStyle}>
-              <div style={modalIconStyle}>💰</div>
+              <div style={modalIconStyle}>✏️</div>
               <h2 style={modalTitleStyle}>
-                تعديل سعر الطاولة
+                تعديل الطاولة
               </h2>
               <p style={modalSubtitleStyle}>
                 طاولة رقم {selectedTable.table_number}
               </p>
             </div>
 
-            {/* Current Price Display */}
-            <div style={currentPriceDisplayStyle}>
-              <div style={currentPriceLabelStyle}>
-                السعر الحالي:
+            {/* Current Info Display */}
+            <div style={currentInfoDisplayStyle}>
+              <div style={currentInfoLabelStyle}>
+                المعلومات الحالية:
               </div>
-              <div style={currentPriceValueStyle}>
-                {selectedTable.price_per_hour || 0} شيقل/ساعة
+              <div style={currentInfoValueStyle}>
+                السعر: {selectedTable.price_per_hour || 0} شيقل/ساعة
+              </div>
+              <div style={currentInfoValueStyle}>
+                الحالة: {selectedTable.status === "active" ? "نشط" : "غير نشط"}
               </div>
             </div>
 
@@ -577,10 +585,29 @@ export default function EditTablePage() {
               />
             </div>
 
+            {/* Status Select */}
+            <div style={inputGroupStyle}>
+              <label style={labelStyle}>
+                حالة الطاولة:
+              </label>
+              <select
+                value={newStatus}
+                onChange={(e) => setNewStatus(e.target.value)}
+                style={selectStyle}
+              >
+                <option value="active">نشط</option>
+                <option value="deactive">غير نشط</option>
+              </select>
+            </div>
+
             {/* Action Buttons */}
             <div style={modalActionsStyle}>
               <button
-                onClick={() => setSelectedTable(null)}
+                onClick={() => {
+                  setSelectedTable(null);
+                  setNewPrice("");
+                  setNewStatus("");
+                }}
                 style={cancelButtonStyle}
               >
                 إلغاء
