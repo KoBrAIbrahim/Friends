@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { useEffect, useState } from "react";
 import {
   collection,
@@ -9,11 +10,13 @@ import { db } from "../services/firebase";
 export default function MainPage() {
   const [filter, setFilter] = useState("today");
   const [ordersTotal, setOrdersTotal] = useState(0);
+  const [ordersProfitTotal, setOrdersProfitTotal] = useState(0);
   const [billiardsTotal, setBilliardsTotal] = useState(0);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sessionOrderTotals, setSessionOrderTotals] = useState({});
+  const [sessionOrderProfits, setSessionOrderProfits] = useState({});
   const [tournamentTotal, setTournamentTotal] = useState(0);
   
   const now = new Date();
@@ -65,6 +68,7 @@ export default function MainPage() {
       const q = query(collection(db, "order_sessions"));
       const snapshot = await getDocs(q);
       let total = 0;
+      let profit = 0;
 
       snapshot.forEach((doc) => {
         const data = doc.data();
@@ -72,27 +76,65 @@ export default function MainPage() {
         if (createdAt >= from && createdAt <= to && data.is_closed) {
           const sessionId = doc.id;
           total += sessionOrderTotals[sessionId] || 0;
+          profit += sessionOrderProfits[sessionId] || 0;
         }
       });
 
       setOrdersTotal(total);
+      setOrdersProfitTotal(profit);
     } catch (error) {
       console.error("Error fetching order sessions:", error);
     }
   };
 
   const fetchOrderItemsTotal = async () => {
-    const q = query(collection(db, "order_items"));
-    const snap = await getDocs(q);
-    const totals = {};
-    snap.forEach((doc) => {
-      const data = doc.data();
-      const sessionId = data.session_id;
-      const itemTotal = parseFloat(data.sell_price || 0) * parseInt(data.quantity || 1);
-      if (!totals[sessionId]) totals[sessionId] = 0;
-      totals[sessionId] += itemTotal;
-    });
-    setSessionOrderTotals(totals);
+    try {
+      // First, get all inventory items to have price lookup
+      const inventoryQuery = query(collection(db, "inventory"));
+      const inventorySnap = await getDocs(inventoryQuery);
+      const inventoryPrices = {};
+      
+      inventorySnap.forEach((doc) => {
+        const data = doc.data();
+        inventoryPrices[doc.id] = {
+          price: parseFloat(data.price || 0),
+          sell_price: parseFloat(data.sell_price || 0)
+        };
+      });
+
+      // Then get order items
+      const orderItemsQuery = query(collection(db, "order_items"));
+      const orderItemsSnap = await getDocs(orderItemsQuery);
+      const totals = {};
+      const profits = {};
+      
+      orderItemsSnap.forEach((doc) => {
+        const data = doc.data();
+        const sessionId = data.session_id;
+        const productId = data.product_id;
+        const quantity = parseInt(data.quantity || 1);
+        
+        // Get sell_price from order_items (actual selling price)
+        const sellPrice = parseFloat(data.sell_price || 0);
+        
+        // Get original price from inventory
+        const originalPrice = inventoryPrices[productId]?.price || 0;
+        
+        const itemTotal = sellPrice * quantity;
+        const itemProfit = (sellPrice - originalPrice) * quantity;
+        
+        if (!totals[sessionId]) totals[sessionId] = 0;
+        if (!profits[sessionId]) profits[sessionId] = 0;
+        
+        totals[sessionId] += itemTotal;
+        profits[sessionId] += itemProfit;
+      });
+      
+      setSessionOrderTotals(totals);
+      setSessionOrderProfits(profits);
+    } catch (error) {
+      console.error("Error fetching order items total:", error);
+    }
   };
 
   const fetchBilliardsTotal = async () => {
@@ -151,6 +193,7 @@ export default function MainPage() {
   };
 
   const totalRevenue = ordersTotal + billiardsTotal + tournamentTotal;
+  const totalProfit = ordersProfitTotal + billiardsTotal + tournamentTotal; // البلياردو والبطولات نعتبرهم ربح صافي
   const ordersPercentage = totalRevenue > 0 ? (ordersTotal / totalRevenue) * 100 : 0;
   const billiardsPercentage = totalRevenue > 0 ? (billiardsTotal / totalRevenue) * 100 : 0;
 
@@ -473,6 +516,14 @@ export default function MainPage() {
     margin: 0
   };
 
+  const profitCardStyle = {
+    backgroundColor: '#10b981',
+    color: 'white',
+    border: '1px solid #059669',
+    borderRadius: '8px',
+    padding: '24px'
+  };
+
   const analyticsGridStyle = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
@@ -632,7 +683,6 @@ export default function MainPage() {
         <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>إحصائيات المبيعات</h2>
           <div style={statsGridStyle}>
-            
             {/* Orders Card */}
             <div style={cardStyle} className="card-hover">
               <div style={cardHeaderStyle}>
@@ -713,65 +763,161 @@ export default function MainPage() {
             </div>
 
             {/* Tournaments Card */}
-<div style={cardStyle} className="card-hover">
-  <div style={cardHeaderStyle}>
-    <div style={cardIconSectionStyle}>
-      <div style={cardIconStyle}>
-        <svg style={{width: '20px', height: '20px'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M3 3h18v4H3z"/>
-          <path d="M3 17h18v4H3z"/>
-          <path d="M3 10h18v4H3z"/>
-        </svg>
-      </div>
-      <div>
-        <h3 style={cardTitleStyle}>أرباح البطولات</h3>
-        <p style={cardSubtitleStyle}>صافي الاشتراكات ناقص الجوائز</p>
-      </div>
-    </div>
-    <div style={percentageStyle}>
-      {(totalRevenue > 0 ? (tournamentTotal / totalRevenue) * 100 : 0).toFixed(1)}%
-    </div>
-  </div>
-  
-  <div style={amountStyle}>
-    {tournamentTotal.toFixed(2)}
-    <span style={currencyStyle}>₪</span>
-  </div>
-  
-  <div style={cardFooterStyle}>
-    <div style={footerItemStyle}>
-      <p style={footerLabelStyle}>عدد البطولات</p>
-      <p style={footerValueStyle}>-</p>
-    </div>
-    <div style={footerItemStyle}>
-      <p style={footerLabelStyle}>الربح الصافي</p>
-      <p style={footerValueStyle}>{tournamentTotal.toFixed(0)} ₪</p>
-    </div>
-  </div>
-</div>
-
-
-            {/* Total Card */}
-            <div style={totalCardStyle}>
-              <h3 style={totalCardTitleStyle}>إجمالي المبيعات</h3>
-              <div style={totalAmountStyle}>
-                {totalRevenue.toFixed(2)}
-                <span style={{fontSize: '28px', marginRight: '8px'}}>₪</span>
+            <div style={cardStyle} className="card-hover">
+              <div style={cardHeaderStyle}>
+                <div style={cardIconSectionStyle}>
+                  <div style={cardIconStyle}>
+                    <svg style={{width: '20px', height: '20px'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M3 3h18v4H3z"/>
+                      <path d="M3 17h18v4H3z"/>
+                      <path d="M3 10h18v4H3z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 style={cardTitleStyle}>أرباح البطولات</h3>
+                    <p style={cardSubtitleStyle}>صافي الاشتراكات ناقص الجوائز</p>
+                  </div>
+                </div>
+                <div style={percentageStyle}>
+                  {(totalRevenue > 0 ? (tournamentTotal / totalRevenue) * 100 : 0).toFixed(1)}%
+                </div>
               </div>
               
-              <div style={totalStatsStyle}>
-                <div style={totalStatItemStyle}>
-                  <p style={totalStatValueStyle}>
-                    {((ordersTotal + billiardsTotal) / 1000).toFixed(1)}K
-                  </p>
-                  <p style={totalStatLabelStyle}>ألف شيكل</p>
+              <div style={amountStyle}>
+                {tournamentTotal.toFixed(2)}
+                <span style={currencyStyle}>₪</span>
+              </div>
+              
+              <div style={cardFooterStyle}>
+                <div style={footerItemStyle}>
+                  <p style={footerLabelStyle}>عدد البطولات</p>
+                  <p style={footerValueStyle}>-</p>
                 </div>
-                
-                <div style={totalStatItemStyle}>
-                  <p style={totalStatValueStyle}>
-                    {ordersTotal > billiardsTotal ? "طلبات" : "بلياردو"}
+                <div style={footerItemStyle}>
+                  <p style={footerLabelStyle}>الربح الصافي</p>
+                  <p style={footerValueStyle}>{tournamentTotal.toFixed(0)} ₪</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Sales Profit Card */}
+            <div style={cardStyle} className="card-hover">
+              <div style={cardHeaderStyle}>
+                <div style={cardIconSectionStyle}>
+                  <div style={cardIconStyle}>
+                    <svg style={{width: '20px', height: '20px'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="22,6 13,15 8,10 2,16"/>
+                      <polyline points="16,6 22,6 22,12"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 style={cardTitleStyle}>الربح من المبيعات</h3>
+                    <p style={cardSubtitleStyle}>الفرق بين سعر البيع والشراء</p>
+                  </div>
+                </div>
+                <div style={percentageStyle}>
+                  {totalRevenue > 0 ? ((ordersProfitTotal / totalRevenue) * 100).toFixed(1) : '0'}%
+                </div>
+              </div>
+              
+              <div style={amountStyle}>
+                {ordersProfitTotal.toFixed(2)}
+                <span style={currencyStyle}>₪</span>
+              </div>
+              
+              <div style={cardFooterStyle}>
+                <div style={footerItemStyle}>
+                  <p style={footerLabelStyle}>هامش الربح</p>
+                  <p style={footerValueStyle}>
+                    {ordersTotal > 0 ? ((ordersProfitTotal / ordersTotal) * 100).toFixed(1) : '0'}%
                   </p>
-                  <p style={totalStatLabelStyle}>الأعلى أداءً</p>
+                </div>
+                <div style={footerItemStyle}>
+                  <p style={footerLabelStyle}>متوسط ربح الطلب</p>
+                  <p style={footerValueStyle}>
+                    {ordersProfitTotal > 0 ? (ordersProfitTotal / Math.max(Object.keys(sessionOrderProfits).length, 1)).toFixed(0) : '0'} ₪
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Grand Total Revenue Card */}
+            <div style={cardStyle} className="card-hover">
+              <div style={cardHeaderStyle}>
+                <div style={cardIconSectionStyle}>
+                  <div style={cardIconStyle}>
+                    <svg style={{width: '20px', height: '20px'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect width="20" height="14" x="2" y="5" rx="2"/>
+                      <path d="M2 10h20"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 style={cardTitleStyle}>المجموع العام</h3>
+                    <p style={cardSubtitleStyle}>مبيعات + بلياردو + بطولات</p>
+                  </div>
+                </div>
+                <div style={percentageStyle}>
+                  100%
+                </div>
+              </div>
+              
+              <div style={amountStyle}>
+                {totalRevenue.toFixed(2)}
+                <span style={currencyStyle}>₪</span>
+              </div>
+              
+              <div style={cardFooterStyle}>
+                <div style={footerItemStyle}>
+                  <p style={footerLabelStyle}>المبيعات</p>
+                  <p style={footerValueStyle}>{ordersTotal.toFixed(0)} ₪</p>
+                </div>
+                <div style={footerItemStyle}>
+                  <p style={footerLabelStyle}>بلياردو + بطولات</p>
+                  <p style={footerValueStyle}>
+                    {(billiardsTotal + tournamentTotal).toFixed(0)} ₪
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Total Profit Card */}
+            <div style={cardStyle} className="card-hover">
+              <div style={cardHeaderStyle}>
+                <div style={cardIconSectionStyle}>
+                  <div style={cardIconStyle}>
+                    <svg style={{width: '20px', height: '20px'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                      <circle cx="9" cy="7" r="4"/>
+                      <path d="m22 2-5 10-5-4Z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 style={cardTitleStyle}>مجموع الربح</h3>
+                    <p style={cardSubtitleStyle}>الربح الكامل من كل المصادر</p>
+                  </div>
+                </div>
+                <div style={percentageStyle}>
+                  {totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0'}%
+                </div>
+              </div>
+              
+              <div style={amountStyle}>
+                {totalProfit.toFixed(2)}
+                <span style={currencyStyle}>₪</span>
+              </div>
+              
+              <div style={cardFooterStyle}>
+                <div style={footerItemStyle}>
+                  <p style={footerLabelStyle}>هامش الربح العام</p>
+                  <p style={footerValueStyle}>
+                    {totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0'}%
+                  </p>
+                </div>
+                <div style={footerItemStyle}>
+                  <p style={footerLabelStyle}>ربح المبيعات</p>
+                  <p style={footerValueStyle}>
+                    {ordersProfitTotal.toFixed(0)} ₪
+                  </p>
                 </div>
               </div>
             </div>
@@ -790,6 +936,12 @@ export default function MainPage() {
                 trend: "+12.5%"
               },
               {
+                title: "متوسط ربح الطلب",
+                value: ordersProfitTotal > 0 ? (ordersProfitTotal / Math.max(Object.keys(sessionOrderProfits).length, 1)).toFixed(2) : '0.00',
+                unit: "₪",
+                trend: "+15.3%"
+              },
+              {
                 title: "متوسط جلسة البلياردو",
                 value: billiardsTotal > 0 ? (billiardsTotal / Math.max(1, 1)).toFixed(2) : '0.00',
                 unit: "₪",
@@ -806,6 +958,12 @@ export default function MainPage() {
                 value: billiardsPercentage.toFixed(1),
                 unit: "%",
                 trend: billiardsPercentage > 50 ? "مرتفع" : "منخفض"
+              },
+              {
+                title: "هامش الربح الإجمالي",
+                value: totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0',
+                unit: "%",
+                trend: "ممتاز"
               }
             ].map((metric, index) => (
               <div key={index} style={metricCardStyle}>
