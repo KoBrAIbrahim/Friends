@@ -109,10 +109,10 @@ export default function DrawPage() {
     setAnimatedMatches(initialAnimated);
     
     // Start the animation sequence
-    animateMatches(finalMatchesResult, initialAnimated);
+    animateMatches(finalMatchesResult);
   };
 
-  const animateMatches = (finalMatches, ) => {
+  const animateMatches = (finalMatches) => {
     let currentMatch = 0;
     const animateNextMatch = () => {
       if (currentMatch >= finalMatches.length) {
@@ -190,27 +190,49 @@ export default function DrawPage() {
   const isAdmin = true; // مؤقتًا، اعتبره مدير النظام
 
   const confirmResetDraw = async () => {
-    console.log("confirmResetDraw called!");
-    setShowResetConfirm(false);
-    setIsLoading(true);
+  console.log("confirmResetDraw called!");
+  setShowResetConfirm(false);
+  setIsLoading(true);
+  
+  const ref = doc(db, "tournaments", id);
+  try {
+await updateDoc(ref, {
+  // حذف المباريات الحالية
+  matches: [],
+  current_matches: deleteField(), // ✅ حذف قائمة المباريات الجارية
+
+  // حذف البراكيت والنتائج بالكامل
+  bracket: deleteField(),
+  bracket_history: deleteField(),
+
+  // حذف معلومات الفائز والحالة
+  winner: deleteField(),
+  status: false,
+  completed_date: deleteField(),
+
+  // إعادة تعيين الجولة الحالية
+  current_round: deleteField(),
+
+  // حذف أي بيانات إضافية متعلقة بالنتائج
+  final_results: deleteField(),
+  tournament_progress: deleteField(),
+
+  // حذف أي بيانات براكيت قديمة
+  rounds: deleteField(),
+  championship_data: deleteField()
+});
+
     
-    const ref = doc(db, "tournaments", id);
-    try {
-      await updateDoc(ref, {
-        matches: [],
-        bracket: deleteField(),
-        winner: null,
-        status: false,
-      });
-      window.alert("✅ تم حذف القرعة بنجاح!");
-      window.location.reload();
-    } catch (err) {
-      console.error("فشل الحذف:", err);
-      window.alert("❌ حدث خطأ أثناء حذف القرعة");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    window.alert("✅ تم حذف القرعة والنتائج بالكامل! الآن يمكنك إنشاء قرعة جديدة من البداية.");
+    window.location.reload();
+  } catch (err) {
+    console.error("فشل الحذف:", err);
+    window.alert("❌ حدث خطأ أثناء حذف القرعة والنتائج");
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   const saveMatchesToFirestore = async (data = null) => {
     const matchesToSave = data || (drawType === "manual" ? generateManualMatches() : matches);
@@ -472,7 +494,7 @@ export default function DrawPage() {
                 color: "#6B7280",
                 margin: 0
               }}>
-                حذف القرعة الحالية وإعادة تنفيذها من البداية
+                حذف القرعة والنتائج بالكامل وإعادة تنفيذها من البداية
               </p>
             </div>
             
@@ -539,7 +561,7 @@ export default function DrawPage() {
               ) : (
                 <span style={{ fontSize: "1rem" }}>🗑️</span>
               )}
-              <span>حذف القرعة وإعادة التنفيذ</span>
+              <span>حذف كامل وإعادة البدء</span>
             </button>
           </div>
         )}
@@ -656,7 +678,7 @@ export default function DrawPage() {
                     color: "#1F2937",
                     margin: "0 0 0.75rem 0"
                   }}>
-                    تأكيد حذف القرعة
+                    تأكيد الحذف الشامل
                   </h3>
                   <p style={{
                     color: "#6B7280",
@@ -664,8 +686,9 @@ export default function DrawPage() {
                     margin: 0,
                     lineHeight: "1.6"
                   }}>
-                    هل أنت متأكد من حذف القرعة الحالية؟<br/>
-                    <strong style={{ color: "#DC2626" }}>سيتم مسح جميع المباريات المسجلة.</strong>
+                    هل أنت متأكد من حذف جميع بيانات البطولة؟<br/>
+                    <strong style={{ color: "#DC2626" }}>سيتم مسح: المباريات، البراكيت، النتائج، والفائز.</strong><br/>
+                    <strong style={{ color: "#059669" }}>ستبقى فقط أسماء المشاركين.</strong>
                   </p>
                 </div>
 
@@ -685,7 +708,7 @@ export default function DrawPage() {
                     fontWeight: "600"
                   }}>
                     <span style={{ fontSize: "1.25rem" }}>⚠️</span>
-                    <span>تحذير: لا يمكن التراجع عن هذا الإجراء!</span>
+                    <span>تحذير: هذا سيعيد البطولة لحالة البداية تماماً!</span>
                   </div>
                 </div>
 
@@ -746,7 +769,7 @@ export default function DrawPage() {
                       cursor: isLoading ? "not-allowed" : "pointer",
                       opacity: isLoading ? 0.8 : 1,
                       transition: "all 0.2s ease",
-                      minWidth: "140px",
+                      minWidth: "160px",
                       justifyContent: "center"
                     }}
                     onMouseEnter={(e) => {
@@ -779,7 +802,7 @@ export default function DrawPage() {
                     ) : (
                       <>
                         <span style={{ fontSize: "1rem" }}>🗑️</span>
-                        <span>تأكيد الحذف</span>
+                        <span>تأكيد الحذف الشامل</span>
                       </>
                     )}
                   </button>

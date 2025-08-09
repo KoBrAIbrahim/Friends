@@ -27,6 +27,7 @@ import BracketPage from "./pages/tournaments/BracketPage.jsx";
 import DrawPage from "./pages/tournaments/DrawPage.jsx";
 import TournamentDetailsPage from "./pages/tournaments/TournamentDetailsPage.jsx";
 
+import ExpensesMainPage from "./pages/expenses/ExpensesMainPage.jsx"; // استيراد صفحة المصاريف
 function App() {
   return (
     <Router>
@@ -59,6 +60,9 @@ function App() {
         <Route path="/tournaments/bracket" element={<AppLayout><BracketPage /></AppLayout>} />
         <Route path="/tournaments/draw" element={<AppLayout><DrawPage /></AppLayout>} /> 
         <Route path="/tournaments/:id" element={<AppLayout><TournamentDetailsPage /></AppLayout>} />
+
+        {/* صفحة المصاريف */}
+        <Route path="/expenses" element={<AppLayout><ExpensesMainPage /></AppLayout>} />
       </Routes>
     </Router>
   );

@@ -18,7 +18,8 @@ export default function MainPage() {
   const [sessionOrderTotals, setSessionOrderTotals] = useState({});
   const [sessionOrderProfits, setSessionOrderProfits] = useState({});
   const [tournamentTotal, setTournamentTotal] = useState(0);
-  
+  const [expensesTotal, setExpensesTotal] = useState(0);
+
   const now = new Date();
   let from = new Date();
   let to = new Date();
@@ -58,10 +59,32 @@ export default function MainPage() {
 
   const fetchData = async () => {
     setIsLoading(true);
-   await Promise.all([fetchOrdersTotal(), fetchBilliardsTotal(), fetchTournamentsFinancials()]);
+   await Promise.all([fetchOrdersTotal(), fetchBilliardsTotal(), fetchTournamentsFinancials(),fetchExpensesTotal(),]);
 
     setIsLoading(false);
   };
+
+  const fetchExpensesTotal = async () => {
+  try {
+    const q = query(collection(db, "expenses"));
+    const snap = await getDocs(q);
+    let total = 0;
+
+    snap.forEach((doc) => {
+      const data = doc.data();
+      // نستخدم حقل "date" من صفحة المصاريف (Timestamp)
+      const d = data.date?.toDate?.() || new Date(data.date);
+      if (d >= from && d <= to) {
+        total += Number(data.amount || 0);
+      }
+    });
+
+    setExpensesTotal(total);
+  } catch (e) {
+    console.error("Error fetching expenses:", e);
+  }
+};
+
 
   const fetchOrdersTotal = async () => {
     try {
@@ -196,6 +219,8 @@ export default function MainPage() {
   const totalProfit = ordersProfitTotal + billiardsTotal + tournamentTotal; // البلياردو والبطولات نعتبرهم ربح صافي
   const ordersPercentage = totalRevenue > 0 ? (ordersTotal / totalRevenue) * 100 : 0;
   const billiardsPercentage = totalRevenue > 0 ? (billiardsTotal / totalRevenue) * 100 : 0;
+  const netProfit = totalProfit - expensesTotal; // ✅ صافي الربح بعد خصم المصاريف
+
 
   const containerStyle = {
     minHeight: '100vh',
@@ -921,8 +946,89 @@ export default function MainPage() {
                 </div>
               </div>
             </div>
+            {/* Expenses Card */}
+<div style={cardStyle} className="card-hover">
+  <div style={cardHeaderStyle}>
+    <div style={cardIconSectionStyle}>
+      <div style={{ ...cardIconStyle, backgroundColor: '#EF4444' }}>
+        <svg style={{width: '20px', height: '20px'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 3h18v4H3z"/><path d="M3 10h18v11H3z"/><path d="M8 14h8"/>
+        </svg>
+      </div>
+      <div>
+        <h3 style={cardTitleStyle}>المصاريف</h3>
+        <p style={cardSubtitleStyle}>إجمالي المصاريف ضمن الفلتر المختار</p>
+      </div>
+    </div>
+    <div style={percentageStyle}>
+      {/* نسبة المصاريف من إجمالي الإيراد إن أحببت */}
+      {totalRevenue > 0 ? ((expensesTotal / totalRevenue) * 100).toFixed(1) : '0'}%
+    </div>
+  </div>
+
+  <div style={amountStyle}>
+    {expensesTotal.toFixed(2)}
+    <span style={currencyStyle}>₪</span>
+  </div>
+
+  <div style={cardFooterStyle}>
+    <div style={footerItemStyle}>
+      <p style={footerLabelStyle}>الفترة</p>
+      <p style={footerValueStyle}>
+        {filter === "custom" && customFrom && customTo ? `${customFrom} → ${customTo}` : getFilterDisplayName()}
+      </p>
+    </div>
+    <div style={footerItemStyle}>
+      <p style={footerLabelStyle}>مقارنة بالإيراد</p>
+      <p style={footerValueStyle}>
+        {totalRevenue > 0 ? ((expensesTotal / totalRevenue) * 100).toFixed(1) : '0'}%
+      </p>
+    </div>
+  </div>
+</div>
+
+{/* Net Profit Card */}
+<div style={{ ...cardStyle, backgroundColor: '#0ea5e9', border: '1px solid #0284c7', color: 'white' }} className="card-hover">
+  <div style={cardHeaderStyle}>
+    <div style={cardIconSectionStyle}>
+      <div style={{ ...cardIconStyle, backgroundColor: 'rgba(255,255,255,0.2)' }}>
+        <svg style={{width: '20px', height: '20px'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+      </div>
+      <div>
+        <h3 style={{ ...cardTitleStyle, color: 'white' }}>صافي الربح</h3>
+        <p style={{ ...cardSubtitleStyle, color: 'rgba(255,255,255,.9)' }}>
+          الربح الكلي بعد خصم المصاريف
+        </p>
+      </div>
+    </div>
+    <div style={{ ...percentageStyle, color: 'white' }}>
+      {totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0'}%
+    </div>
+  </div>
+
+  <div style={{ ...amountStyle, color: 'white' }}>
+    {netProfit.toFixed(2)}
+    <span style={{ ...currencyStyle, color: 'rgba(255,255,255,.9)' }}>₪</span>
+  </div>
+
+  <div style={{ ...cardFooterStyle, borderTopColor: 'rgba(255,255,255,.25)' }}>
+    <div style={footerItemStyle}>
+      <p style={{ ...footerLabelStyle, color: 'rgba(255,255,255,.9)' }}>الربح قبل الخصم</p>
+      <p style={{ ...footerValueStyle, color: 'white' }}>{totalProfit.toFixed(0)} ₪</p>
+    </div>
+    <div style={footerItemStyle}>
+      <p style={{ ...footerLabelStyle, color: 'rgba(255,255,255,.9)' }}>المصاريف المخصومة</p>
+      <p style={{ ...footerValueStyle, color: 'white' }}>{expensesTotal.toFixed(0)} ₪</p>
+    </div>
+  </div>
+</div>
+
           </div>
         </section>
+
+
 
         {/* Analytics Section */}
         <section style={sectionStyle}>
