@@ -26,6 +26,11 @@ export default function BracketPage() {
   const intervalRef = useRef(null);
   const timeoutRef = useRef(null);
 
+  // Player swap states
+  const [showSwapSection, setShowSwapSection] = useState(false);
+  const [selectedPlayer1, setSelectedPlayer1] = useState("");
+  const [selectedPlayer2, setSelectedPlayer2] = useState("");
+
   // Cleanup animation function
   const cleanupAnimation = useCallback(() => {
     if (intervalRef.current) {
@@ -367,6 +372,97 @@ const generateNextRoundMatches = useCallback((winners) => {
     triggerToast("🔄 تم إعادة تعيين المباراة");
   }, [triggerToast]);
 
+  // Get all players in current round for swapping
+  const getAllCurrentRoundPlayers = useCallback(() => {
+    const players = [];
+    const displayMatches = getDisplayMatches();
+    
+    displayMatches.forEach((match, matchIndex) => {
+      if (match?.player1 && normalizeName(match.player1)) {
+        players.push({
+          name: match.player1,
+          matchIndex: matchIndex,
+          position: 'player1'
+        });
+      }
+      if (match?.player2 && normalizeName(match.player2)) {
+        players.push({
+          name: match.player2,
+          matchIndex: matchIndex,
+          position: 'player2'
+        });
+      }
+    });
+    
+    return players;
+  }, [getDisplayMatches]);
+
+  // Execute player swap
+  const executePlayerSwap = useCallback(async () => {
+    if (!selectedPlayer1 || !selectedPlayer2 || selectedPlayer1 === selectedPlayer2) {
+      triggerToast("❌ يجب اختيار لاعبين مختلفين");
+      return;
+    }
+    
+    if (!window.confirm(`هل أنت متأكد من تبديل ${selectedPlayer1} مع ${selectedPlayer2}؟`)) {
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      const allPlayers = getAllCurrentRoundPlayers();
+      
+      // Find the positions of both players
+      const player1Info = allPlayers.find(p => p.name === selectedPlayer1);
+      const player2Info = allPlayers.find(p => p.name === selectedPlayer2);
+      
+      if (!player1Info || !player2Info) {
+        triggerToast("❌ فشل في العثور على اللاعبين");
+        return;
+      }
+      
+      // Create new matches array with swapped players
+      const updatedMatches = [...currentMatches];
+      
+      // Swap the players in their positions
+      updatedMatches[player1Info.matchIndex][player1Info.position] = selectedPlayer2;
+      updatedMatches[player2Info.matchIndex][player2Info.position] = selectedPlayer1;
+      
+      // Reset any completed matches that involved these players
+      if (updatedMatches[player1Info.matchIndex].isCompleted) {
+        updatedMatches[player1Info.matchIndex].isCompleted = false;
+        updatedMatches[player1Info.matchIndex].winner = null;
+      }
+      if (updatedMatches[player2Info.matchIndex].isCompleted && player2Info.matchIndex !== player1Info.matchIndex) {
+        updatedMatches[player2Info.matchIndex].isCompleted = false;
+        updatedMatches[player2Info.matchIndex].winner = null;
+      }
+      
+      setCurrentMatches(updatedMatches);
+      
+      // Save to Firebase if we're viewing current round
+      if (isViewingCurrentRound && id) {
+        const ref = doc(db, "tournaments", id);
+        await updateDoc(ref, {
+          current_matches: updatedMatches
+        });
+      }
+      
+      // Reset selection
+      setSelectedPlayer1("");
+      setSelectedPlayer2("");
+      setShowSwapSection(false);
+      
+      triggerToast(`✅ تم تبديل ${selectedPlayer1} مع ${selectedPlayer2} بنجاح!`);
+    } catch (error) {
+      console.error("خطأ في تبديل اللاعبين:", error);
+      triggerToast("❌ حدث خطأ أثناء تبديل اللاعبين");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedPlayer1, selectedPlayer2, currentMatches, getAllCurrentRoundPlayers, isViewingCurrentRound, id, triggerToast]);
+
   // Animate next round matches
   const animateNextRoundMatches = useCallback((finalMatches) => {
     if (!finalMatches || finalMatches.length === 0) return;
@@ -644,7 +740,7 @@ const generateNextRoundMatches = useCallback((winners) => {
     let isMounted = true;
     
     const fetchTournament = async () => {
-      if (!id || isLoading) return;
+      if (!id) return;
       
       try {
         setIsLoading(true);
@@ -1088,38 +1184,199 @@ const generateNextRoundMatches = useCallback((winners) => {
           {isViewingCurrentRound ? "نظام الإقصاء المباشر" : "جولة منتهية - يمكن التعديل"}
         </p>
         
-        {/* Round Progress */}
-        {isViewingCurrentRound && (
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "1rem",
-            padding: "1rem",
-            backgroundColor: "#F0F9FF",
-            borderRadius: "12px",
-            border: "1px solid #BAE6FD"
-          }}>
-            <span style={{ color: "#0369A1", fontWeight: "600" }}>
-              المباريات المكتملة: {getDisplayMatches().filter(m => m && m.isCompleted).length} / {getDisplayMatches().length}
-            </span>
-            <div style={{
-              width: "200px",
-              height: "8px",
-              backgroundColor: "#E0F2FE",
-              borderRadius: "4px",
-              overflow: "hidden"
-            }}>
-              <div style={{
-                width: `${getDisplayMatches().length > 0 ? (getDisplayMatches().filter(m => m && m.isCompleted).length / getDisplayMatches().length) * 100 : 0}%`,
-                height: "100%",
-                backgroundColor: "#0EA5E9",
-                borderRadius: "4px",
-                transition: "width 0.3s ease"
-              }}></div>
-            </div>
-          </div>
-        )}
+                 {/* Round Progress */}
+         {isViewingCurrentRound && (
+           <div style={{
+             display: "flex",
+             alignItems: "center",
+             justifyContent: "center",
+             gap: "1rem",
+             padding: "1rem",
+             backgroundColor: "#F0F9FF",
+             borderRadius: "12px",
+             border: "1px solid #BAE6FD"
+           }}>
+             <span style={{ color: "#0369A1", fontWeight: "600" }}>
+               المباريات المكتملة: {getDisplayMatches().filter(m => m && m.isCompleted).length} / {getDisplayMatches().length}
+             </span>
+             <div style={{
+               width: "200px",
+               height: "8px",
+               backgroundColor: "#E0F2FE",
+               borderRadius: "4px",
+               overflow: "hidden"
+             }}>
+               <div style={{
+                 width: `${getDisplayMatches().length > 0 ? (getDisplayMatches().filter(m => m && m.isCompleted).length / getDisplayMatches().length) * 100 : 0}%`,
+                 height: "100%",
+                 backgroundColor: "#0EA5E9",
+                 borderRadius: "4px",
+                 transition: "width 0.3s ease"
+               }}></div>
+             </div>
+           </div>
+         )}
+
+         {/* Player Swap Section */}
+         {isViewingCurrentRound && (
+           <div style={{ marginTop: "1rem" }}>
+             <button
+               onClick={() => setShowSwapSection(!showSwapSection)}
+               style={{
+                 padding: "0.5rem 1rem",
+                 backgroundColor: showSwapSection ? "#EF4444" : "#A2AF9B",
+                 color: "#FFFFFF",
+                 border: "none",
+                 borderRadius: "8px",
+                 fontSize: "0.875rem",
+                 fontWeight: "600",
+                 cursor: "pointer",
+                 transition: "all 0.2s ease",
+                 display: "flex",
+                 alignItems: "center",
+                 gap: "0.5rem",
+                 margin: "0 auto"
+               }}
+             >
+               <span>{showSwapSection ? "🔄" : "⚡"}</span>
+               <span>{showSwapSection ? "إلغاء التبديل" : "تبديل اللاعبين"}</span>
+             </button>
+
+             {showSwapSection && (
+               <div style={{
+                 marginTop: "1rem",
+                 padding: "1.5rem",
+                 backgroundColor: "#FEF3C7",
+                 border: "2px solid #FBBF24",
+                 borderRadius: "12px"
+               }}>
+                 <h4 style={{
+                   fontSize: "1.1rem",
+                   fontWeight: "600",
+                   color: "#92400E",
+                   margin: "0 0 1rem 0",
+                   textAlign: "center"
+                 }}>
+                   🔄 تبديل مكان اللاعبين
+                 </h4>
+
+                 <div style={{
+                   display: "grid",
+                   gridTemplateColumns: "1fr 1fr auto",
+                   gap: "1rem",
+                   alignItems: "end"
+                 }}>
+                   {/* Player 1 Selector */}
+                   <div>
+                     <label style={{
+                       display: "block",
+                       fontSize: "0.875rem",
+                       fontWeight: "600",
+                       color: "#92400E",
+                       marginBottom: "0.5rem"
+                     }}>
+                       اللاعب الأول:
+                     </label>
+                     <select
+                       value={selectedPlayer1}
+                       onChange={(e) => setSelectedPlayer1(e.target.value)}
+                       style={{
+                         width: "100%",
+                         padding: "0.75rem",
+                         border: "2px solid #FBBF24",
+                         borderRadius: "8px",
+                         fontSize: "1rem",
+                         backgroundColor: "#FFFFFF",
+                         color: "#1F2937"
+                       }}
+                     >
+                       <option value="">-- اختر اللاعب الأول --</option>
+                       {getAllCurrentRoundPlayers().map((player, idx) => (
+                         <option key={idx} value={player.name}>
+                           {player.name}
+                         </option>
+                       ))}
+                     </select>
+                   </div>
+
+                   {/* Player 2 Selector */}
+                   <div>
+                     <label style={{
+                       display: "block",
+                       fontSize: "0.875rem",
+                       fontWeight: "600",
+                       color: "#92400E",
+                       marginBottom: "0.5rem"
+                     }}>
+                       اللاعب الثاني:
+                     </label>
+                     <select
+                       value={selectedPlayer2}
+                       onChange={(e) => setSelectedPlayer2(e.target.value)}
+                       style={{
+                         width: "100%",
+                         padding: "0.75rem",
+                         border: "2px solid #FBBF24",
+                         borderRadius: "8px",
+                         fontSize: "1rem",
+                         backgroundColor: "#FFFFFF",
+                         color: "#1F2937"
+                       }}
+                     >
+                       <option value="">-- اختر اللاعب الثاني --</option>
+                       {getAllCurrentRoundPlayers()
+                         .filter(p => p.name !== selectedPlayer1)
+                         .map((player, idx) => (
+                           <option key={idx} value={player.name}>
+                             {player.name}
+                           </option>
+                         ))}
+                     </select>
+                   </div>
+
+                   {/* Swap Button */}
+                   <button
+                     onClick={executePlayerSwap}
+                     disabled={!selectedPlayer1 || !selectedPlayer2 || selectedPlayer1 === selectedPlayer2 || isLoading}
+                     style={{
+                       padding: "0.75rem 1.5rem",
+                       backgroundColor: (!selectedPlayer1 || !selectedPlayer2 || selectedPlayer1 === selectedPlayer2 || isLoading) 
+                         ? "#9CA3AF" 
+                         : "#10B981",
+                       color: "#FFFFFF",
+                       border: "none",
+                       borderRadius: "8px",
+                       fontSize: "1rem",
+                       fontWeight: "600",
+                       cursor: (!selectedPlayer1 || !selectedPlayer2 || selectedPlayer1 === selectedPlayer2 || isLoading) 
+                         ? "not-allowed" 
+                         : "pointer",
+                       transition: "all 0.2s ease",
+                       minWidth: "120px"
+                     }}
+                   >
+                     {isLoading ? "جاري التبديل..." : "تبديل"}
+                   </button>
+                 </div>
+
+                 {selectedPlayer1 && selectedPlayer2 && selectedPlayer1 !== selectedPlayer2 && (
+                   <div style={{
+                     marginTop: "1rem",
+                     padding: "0.75rem",
+                     backgroundColor: "rgba(59, 130, 246, 0.1)",
+                     border: "1px solid #3B82F6",
+                     borderRadius: "8px",
+                     fontSize: "0.875rem",
+                     color: "#1E40AF",
+                     textAlign: "center"
+                   }}>
+                     <strong>معاينة:</strong> سيتم تبديل <strong>{selectedPlayer1}</strong> مع <strong>{selectedPlayer2}</strong>
+                   </div>
+                 )}
+               </div>
+             )}
+           </div>
+         )}
       </div>
 
       {/* Current Round Matches */}
