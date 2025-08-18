@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../services/firebase";
+import { useDateRange } from "../../contexts/DateRangeContext";
+import DateRangeSelector from "../../components/common/DateRangeSelector";
 
 export default function BilliardsStatsPage() {
+  const { isDateInRange } = useDateRange();
   const [sessions, setSessions] = useState([]);
-  const [dateFilter, setDateFilter] = useState("all");
   const [tableFilter, setTableFilter] = useState("");
   const [availableTables, setAvailableTables] = useState([]);
   const [tableNumberToId, setTableNumberToId] = useState({});
@@ -43,32 +45,13 @@ export default function BilliardsStatsPage() {
     }
   };
 
-  const isInDateRange = (sessionDate) => {
-    if (dateFilter === "all") return true;
-    
-    const now = new Date();
-    const sessionDateObj = sessionDate.toDate ? sessionDate.toDate() : new Date(sessionDate);
-    
-    switch (dateFilter) {
-      case "today":
-        { const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        return sessionDateObj >= today; }
-      case "week":
-        { const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        return sessionDateObj >= weekAgo; }
-      case "month":
-        { const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        return sessionDateObj >= monthAgo; }
-      default:
-        return true;
-    }
-  };
+
 
   const selectedTableId = tableFilter ? tableNumberToId[tableFilter] : "";
 
   const paidSessions = sessions.filter(s => {
     if (!s.pay_status || !s.end_time || !s.start_time) return false;
-    const endDateValid = isInDateRange(s.end_time);
+    const endDateValid = isDateInRange(s.end_time);
     const matchTable = selectedTableId ? s.table_id === selectedTableId : true;
     return endDateValid && matchTable;
   });
@@ -272,46 +255,29 @@ export default function BilliardsStatsPage() {
             </p>
           </div>
 
-          {/* Filters Section */}
+          {/* Date Range Filter */}
+          <DateRangeSelector />
+          
+          {/* Table Filter */}
           <div style={filtersContainerStyle}>
             <h3 style={filtersHeaderStyle}>
-              فلترة البيانات
+              فلترة حسب الطاولة
             </h3>
             
-            <div style={filtersGridStyle}>
-              {/* Date Filter */}
-              <div style={filterGroupStyle}>
-                <label style={labelStyle}>
-                  الفترة الزمنية:
-                </label>
-                <select 
-                  value={dateFilter} 
-                  onChange={(e) => setDateFilter(e.target.value)} 
-                  style={selectStyle(dateFilter !== "all")}
-                >
-                  <option value="all">جميع الأيام</option>
-                  <option value="today">اليوم</option>
-                  <option value="week">الأسبوع الماضي</option>
-                  <option value="month">الشهر الماضي</option>
-                </select>
-              </div>
-              
-              {/* Table Filter */}
-              <div style={filterGroupStyle}>
-                <label style={labelStyle}>
-                  رقم الطاولة:
-                </label>
-                <select 
-                  value={tableFilter} 
-                  onChange={(e) => setTableFilter(e.target.value)} 
-                  style={selectStyle(tableFilter !== "")}
-                >
-                  <option value="">الكل</option>
-                  {availableTables.map((tableNum) => (
-                    <option key={tableNum} value={tableNum}>الطاولة {tableNum}</option>
-                  ))}
-                </select>
-              </div>
+            <div style={filterGroupStyle}>
+              <label style={labelStyle}>
+                رقم الطاولة:
+              </label>
+              <select 
+                value={tableFilter} 
+                onChange={(e) => setTableFilter(e.target.value)} 
+                style={selectStyle(tableFilter !== "")}
+              >
+                <option value="">جميع الطاولات</option>
+                {availableTables.map((tableNum) => (
+                  <option key={tableNum} value={tableNum}>الطاولة {tableNum}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

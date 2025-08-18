@@ -171,7 +171,8 @@ export default function Header() {
                 { to: "/orders", icon: "🧾", label: "الطلبات" },
                 { to: "/inventory", icon: "📦", label: "المستودع" },
                 { to: "/tournaments", icon: "🏆", label: "البطولات" },
-                { to: "/expenses", icon: "💸", label: "المصاريف" }
+                { to: "/expenses", icon: "💸", label: "المصاريف" },
+                { to: "/sessions", icon: "📊", label: "إدارة الجلسات" }
               ].map((item) => (
                 <button 
                   key={item.to}

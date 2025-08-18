@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { DateRangeProvider } from "./contexts/DateRangeContext.jsx";
 
 // هيدر وواجهة رئيسية
 import LoginPage from "./pages/auth/LoginPage.jsx";
@@ -28,10 +29,12 @@ import DrawPage from "./pages/tournaments/DrawPage.jsx";
 import TournamentDetailsPage from "./pages/tournaments/TournamentDetailsPage.jsx";
 
 import ExpensesMainPage from "./pages/expenses/ExpensesMainPage.jsx"; // استيراد صفحة المصاريف
+import AllSessionsPage from "./pages/AllSessionsPage.jsx"; // صفحة إدارة جميع الجلسات
 function App() {
   return (
-    <Router>
-      <Routes>
+    <DateRangeProvider>
+      <Router>
+        <Routes>
         {/* صفحة الدخول (خارج AppLayout) */}
         <Route path="/" element={<LoginPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -63,8 +66,12 @@ function App() {
 
         {/* صفحة المصاريف */}
         <Route path="/expenses" element={<AppLayout><ExpensesMainPage /></AppLayout>} />
-      </Routes>
-    </Router>
+        
+        {/* صفحة إدارة جميع الجلسات */}
+        <Route path="/sessions" element={<AppLayout><AllSessionsPage /></AppLayout>} />
+        </Routes>
+      </Router>
+    </DateRangeProvider>
   );
 }
 

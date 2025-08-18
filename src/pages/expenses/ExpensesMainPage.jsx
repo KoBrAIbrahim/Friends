@@ -13,6 +13,8 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import { db } from "../../services/firebase";
+import { useDateRange } from "../../contexts/DateRangeContext";
+import DateRangeSelector from "../../components/common/DateRangeSelector";
 
 /* ============ Helpers ============ */
 // تحويل تاريخ JS إلى yyyy-mm-dd محلي بدون UTC
@@ -35,6 +37,8 @@ const fmtDatePretty = (val) => {
 };
 
 export default function ExpensesMainPage() {
+  const { isDateInRange } = useDateRange();
+  
   /* ============ Add form ============ */
   const [date, setDate] = useState(() => toYMDLocal(new Date()));
   const [note, setNote] = useState("");
@@ -43,11 +47,6 @@ export default function ExpensesMainPage() {
 
   /* ============ List ============ */
   const [expenses, setExpenses] = useState([]);
-
-  /* ============ Filter ============ */
-  const [filter, setFilter] = useState("today"); // today | week | month | custom
-  const [fromDate, setFromDate] = useState(() => toYMDLocal(new Date()));
-  const [toDate, setToDate] = useState(() => toYMDLocal(new Date()));
 
   /* ============ Edit modal ============ */
   const [editing, setEditing] = useState(null); // {id, date(TS), note, amount}
@@ -91,30 +90,10 @@ export default function ExpensesMainPage() {
   /* ============ Client-side filtering ============ */
   const filteredExpenses = useMemo(() => {
     if (!expenses?.length) return [];
-    const now = new Date();
-    let start = null;
-    let end = null;
-
-    if (filter === "today") {
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    } else if (filter === "week") {
-      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
-    } else if (filter === "month") {
-      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
-    } else if (filter === "custom" && fromDate && toDate) {
-      start = new Date(`${fromDate}T00:00:00`);
-      end = new Date(`${toDate}T23:59:59`);
-    }
-
     return expenses.filter((e) => {
-      const d = e.date?.toDate ? e.date.toDate() : new Date(e.date);
-      if (!start || !end) return true;
-      return d >= start && d <= end;
+      return isDateInRange(e.date);
     });
-  }, [expenses, filter, fromDate, toDate]);
+  }, [expenses, isDateInRange]);
 
   const total = useMemo(
     () => filteredExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
@@ -171,67 +150,31 @@ export default function ExpensesMainPage() {
         </div>
       </div>
 
-      {/* Controls + Add */}
+      {/* Date Range Filter */}
+      <DateRangeSelector />
+
+      {/* Add Expense Form */}
       <div style={cardBody}>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", justifyContent: "space-between" }}>
-          {/* Filter */}
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              style={input}
-            >
-              <option value="today">اليوم</option>
-              <option value="week">آخر 7 أيام</option>
-              <option value="month">آخر 30 يوم</option>
-              <option value="custom">تاريخ مخصص</option>
-            </select>
-
-            {filter === "custom" && (
-              <>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  style={input}
-                />
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  style={input}
-                />
-                {/* شارة تُظهر النطاق المختار */}
-                <span style={rangePill}>
-                  من {new Date(`${fromDate}T00:00:00`).toLocaleDateString("ar-EG")} — إلى{" "}
-                  {new Date(`${toDate}T00:00:00`).toLocaleDateString("ar-EG")}
-                </span>
-              </>
-            )}
-          </div>
-
-          {/* Add form */}
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={input} />
-            <input
-              type="text"
-              placeholder="ملاحظات"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              style={{ ...input, minWidth: 220 }}
-            />
-            <input
-              type="number"
-              inputMode="decimal"
-              placeholder="السعر"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              style={{ ...input, width: 140 }}
-            />
-            <button onClick={handleAdd} disabled={loading} style={btnPrimary}>
-              {loading ? "جاري الإضافة..." : "➕ إضافة مصروف"}
-            </button>
-          </div>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={input} />
+          <input
+            type="text"
+            placeholder="ملاحظات"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            style={{ ...input, minWidth: 220 }}
+          />
+          <input
+            type="number"
+            inputMode="decimal"
+            placeholder="السعر"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            style={{ ...input, width: 140 }}
+          />
+          <button onClick={handleAdd} disabled={loading} style={btnPrimary}>
+            {loading ? "جاري الإضافة..." : "➕ إضافة مصروف"}
+          </button>
         </div>
       </div>
 
@@ -355,15 +298,7 @@ const title = { fontSize: "1.5rem", fontWeight: 600, color: "#1F2937", margin: 0
 const subtitle = { fontSize: ".875rem", color: "#6B7280", margin: 0 };
 const input = { padding: ".6rem .75rem", borderRadius: "8px", border: "1px solid #D1D5DB", outline: "none", background: "#fff" };
 
-const rangePill = {
-  padding: ".4rem .6rem",
-  borderRadius: "999px",
-  background: "#F3F4F6",
-  border: "1px solid #E5E7EB",
-  fontSize: ".8rem",
-  color: "#374151",
-  whiteSpace: "nowrap",
-};
+
 
 const tableWrap = {
   overflow: "hidden",

@@ -3,12 +3,13 @@ import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../services/firebase";
 import { useNavigate } from "react-router-dom";
+import { useDateRange } from "../../contexts/DateRangeContext";
+import DateRangeSelector from "../../components/common/DateRangeSelector";
 
 export default function OrdersStatsPage() {
+  const { isDateInRange } = useDateRange();
   const [sessions, setSessions] = useState([]);
   const [orderItems, setOrderItems] = useState([]);
-  const [filter, setFilter] = useState("today");
-  const [selectedDate, setSelectedDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState([]);
   
@@ -319,10 +320,10 @@ export default function OrdersStatsPage() {
     fetchData();
   }, []);
 
-  // Reset to first page when filter changes
+  // Reset to first page when date range changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, selectedDate]);
+  }, [isDateInRange]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -347,36 +348,10 @@ export default function OrdersStatsPage() {
     setLoading(false);
   };
 
-  const isInFilter = (timestamp) => {
-    if (!timestamp || !timestamp.toDate) return false;
-    const date = timestamp.toDate();
-    const today = new Date();
 
-    switch (filter) {
-      case "today":
-        return date.toDateString() === today.toDateString();
-      case "last_week": {
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(today.getDate() - 7);
-        return date >= oneWeekAgo && date <= today;
-      }
-      case "last_month": {
-        const oneMonthAgo = new Date();
-        oneMonthAgo.setMonth(today.getMonth() - 1);
-        return date >= oneMonthAgo && date <= today;
-      }
-      case "specific": {
-        if (!selectedDate) return false;
-        const selected = new Date(selectedDate);
-        return date.toDateString() === selected.toDateString();
-      }
-      default:
-        return true;
-    }
-  };
 
   const filteredSessions = sessions
-    .filter((s) => s.created_at && isInFilter(s.created_at))
+    .filter((s) => s.created_at && isDateInRange(s.created_at))
     .sort((a, b) => b.created_at.toDate() - a.created_at.toDate())
     .map((s) => {
       const items = orderItems.filter((i) => i.session_id === s.id);
@@ -409,15 +384,7 @@ export default function OrdersStatsPage() {
   const totalQuantity = filteredSessions.reduce((sum, s) => sum + s.totalQuantity, 0);
   const paidSessions = filteredSessions.filter(s => s.isPaid).length;
 
-  const getFilterLabel = () => {
-    switch (filter) {
-      case "today": return "اليوم";
-      case "last_week": return "آخر أسبوع";
-      case "last_month": return "آخر شهر";
-      case "specific": return selectedDate ? `يوم ${new Date(selectedDate).toLocaleDateString('ar')}` : "يوم محدد";
-      default: return "";
-    }
-  };
+
 
   if (loading) {
     return (
@@ -437,30 +404,7 @@ export default function OrdersStatsPage() {
       </div>
 
       {/* Filter Section */}
-      <div style={styles.filterSection}>
-        <h3 style={styles.filterTitle}>تصفية البيانات</h3>
-        <div style={styles.filterControls}>
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            style={styles.select}
-          >
-            <option value="today">اليوم</option>
-            <option value="last_week">آخر أسبوع</option>
-            <option value="last_month">آخر شهر</option>
-            <option value="specific">يوم محدد</option>
-          </select>
-
-          {filter === "specific" && (
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              style={styles.dateInput}
-            />
-          )}
-        </div>
-      </div>
+      <DateRangeSelector />
 
       {/* Summary Statistics */}
       <div style={styles.summaryGrid}>
@@ -484,7 +428,7 @@ export default function OrdersStatsPage() {
 
       {/* Main Stats Card */}
       <div style={styles.statsCard}>
-        <div style={styles.statsTitle}>إحصائيات {getFilterLabel()}</div>
+        <div style={styles.statsTitle}>إحصائيات الطلبات للفترة المحددة</div>
         <div style={styles.statsValue}>{totalSellAll.toFixed(2)} شيكل</div>
         <div style={styles.statsSubtitle}>
           {filteredSessions.length} جلسة • {paidSessions} مدفوعة • {filteredSessions.length - paidSessions} غير مدفوعة

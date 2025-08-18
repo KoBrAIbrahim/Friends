@@ -1,114 +1,201 @@
 /* eslint-disable no-unused-vars */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   collection,
   getDocs,
   query,
 } from "firebase/firestore";
 import { db } from "../services/firebase";
+import { useDateRange } from "../contexts/DateRangeContext";
+import DateRangeSelector from "../components/common/DateRangeSelector";
+import SessionControl from "../components/common/SessionControl";
+import CashFlowCard from "../components/common/CashFlowCard";
+import SessionBrowser from "../components/common/SessionBrowser";
+
 
 export default function MainPage() {
-  const [filter, setFilter] = useState("today");
+  const { getDateRange, getFilterDisplayName, presetFilter } = useDateRange();
   const [ordersTotal, setOrdersTotal] = useState(0);
   const [ordersProfitTotal, setOrdersProfitTotal] = useState(0);
   const [billiardsTotal, setBilliardsTotal] = useState(0);
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sessionOrderTotals, setSessionOrderTotals] = useState({});
   const [sessionOrderProfits, setSessionOrderProfits] = useState({});
   const [tournamentTotal, setTournamentTotal] = useState(0);
   const [expensesTotal, setExpensesTotal] = useState(0);
 
-  const now = new Date();
-  let from = new Date();
-  let to = new Date();
+  const { start: from, end: to } = getDateRange();
 
-  if (filter === "today") {
-    from.setHours(0, 0, 0, 0);
-    to.setHours(23, 59, 59, 999);
-  } else if (filter === "week") {
-    const firstDay = new Date();
-    firstDay.setDate(now.getDate() - 6);
-    from = new Date(firstDay.setHours(0, 0, 0, 0));
-    to.setHours(23, 59, 59, 999);
-  } else if (filter === "month") {
-    const firstDay = new Date();
-    firstDay.setDate(now.getDate() - 29);
-    from = new Date(firstDay.setHours(0, 0, 0, 0));
-    to.setHours(23, 59, 59, 999);
-  } else if (filter === "custom" && customFrom) {
-    from = new Date(customFrom);
-    from.setHours(0, 0, 0, 0);
-    if (customTo) {
-      to = new Date(customTo);
-      to.setHours(23, 59, 59, 999);
-    } else {
-      to = new Date(customFrom);
-      to.setHours(23, 59, 59, 999);
-    }
-  }
-
-  useEffect(() => {
-    fetchData();
-  }, [filter, customFrom, customTo]);
-
-  useEffect(() => {
-    fetchOrderItemsTotal();
-  }, []);
-
-  const fetchData = async () => {
-    setIsLoading(true);
-   await Promise.all([fetchOrdersTotal(), fetchBilliardsTotal(), fetchTournamentsFinancials(),fetchExpensesTotal(),]);
-
-    setIsLoading(false);
-  };
-
-  const fetchExpensesTotal = async () => {
-  try {
-    const q = query(collection(db, "expenses"));
-    const snap = await getDocs(q);
-    let total = 0;
-
-    snap.forEach((doc) => {
-      const data = doc.data();
-      // نستخدم حقل "date" من صفحة المصاريف (Timestamp)
-      const d = data.date?.toDate?.() || new Date(data.date);
-      if (d >= from && d <= to) {
-        total += Number(data.amount || 0);
-      }
-    });
-
-    setExpensesTotal(total);
-  } catch (e) {
-    console.error("Error fetching expenses:", e);
-  }
-};
-
-
-  const fetchOrdersTotal = async () => {
+  const fetchExpensesTotal = useCallback(async () => {
     try {
-      const q = query(collection(db, "order_sessions"));
-      const snapshot = await getDocs(q);
+      const q = query(collection(db, "expenses"));
+      const snap = await getDocs(q);
+      let total = 0;
+
+      snap.forEach((doc) => {
+        const data = doc.data();
+        // نستخدم حقل "date" من صفحة المصاريف (Timestamp)
+        const d = data.date?.toDate?.() || new Date(data.date);
+        if (d >= from && d <= to) {
+          total += Number(data.amount || 0);
+        }
+      });
+
+      setExpensesTotal(total);
+    } catch (e) {
+      console.error("Error fetching expenses:", e);
+    }
+  }, [from, to]);
+
+  const fetchOrdersTotal = useCallback(async () => {
+    try {
+      // Get fresh data each time - fetch order items and calculate totals directly
+      const [inventorySnap, orderItemsSnap, orderSessionsSnap] = await Promise.all([
+        getDocs(query(collection(db, "inventory"))),
+        getDocs(query(collection(db, "order_items"))),
+        getDocs(query(collection(db, "order_sessions")))
+      ]);
+
+      // Build inventory price lookup
+      const inventoryPrices = {};
+      inventorySnap.forEach((doc) => {
+        const data = doc.data();
+        inventoryPrices[doc.id] = {
+          price: parseFloat(data.price || 0),
+          sell_price: parseFloat(data.sell_price || 0)
+        };
+      });
+
+      // Calculate order totals by session
+      const sessionTotals = {};
+      const sessionProfits = {};
+      
+      orderItemsSnap.forEach((doc) => {
+        const data = doc.data();
+        const sessionId = data.session_id;
+        const productId = data.product_id;
+        const quantity = parseInt(data.quantity || 1);
+        const sellPrice = parseFloat(data.sell_price || 0);
+        const originalPrice = inventoryPrices[productId]?.price || 0;
+        
+        const itemTotal = sellPrice * quantity;
+        const itemProfit = (sellPrice - originalPrice) * quantity;
+        
+        if (!sessionTotals[sessionId]) sessionTotals[sessionId] = 0;
+        if (!sessionProfits[sessionId]) sessionProfits[sessionId] = 0;
+        
+        sessionTotals[sessionId] += itemTotal;
+        sessionProfits[sessionId] += itemProfit;
+      });
+
+      // Update global state for other uses
+      setSessionOrderTotals(sessionTotals);
+      setSessionOrderProfits(sessionProfits);
+
+      // Smart session-aware filtering
       let total = 0;
       let profit = 0;
 
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        const createdAt = data.created_at?.toDate?.() || new Date(data.created_at);
-        if (createdAt >= from && createdAt <= to && data.is_closed) {
-          const sessionId = doc.id;
-          total += sessionOrderTotals[sessionId] || 0;
-          profit += sessionOrderProfits[sessionId] || 0;
-        }
-      });
+      // For custom date ranges (when user picks specific dates), 
+      // look for sessions that STARTED on those dates, regardless of when they ended
+      if (presetFilter === "custom" && from.getTime() === to.getTime()) {
+        // Single day selected - find sessions that started on this day
+        const targetStart = new Date(from);
+        targetStart.setHours(0, 0, 0, 0);
+        const targetEnd = new Date(from);
+        targetEnd.setHours(23, 59, 59, 999);
+
+        orderSessionsSnap.forEach((doc) => {
+          const data = doc.data();
+          const createdAt = data.created_at?.toDate?.() || new Date(data.created_at);
+          
+          // Check if session started on the target day
+          if (createdAt >= targetStart && createdAt <= targetEnd) {
+            const sessionId = doc.id;
+            total += sessionTotals[sessionId] || 0;
+            profit += sessionProfits[sessionId] || 0;
+          }
+        });
+      } else {
+        // Regular filtering for other cases (today, week, month, date ranges)
+        orderSessionsSnap.forEach((doc) => {
+          const data = doc.data();
+          const createdAt = data.created_at?.toDate?.() || new Date(data.created_at);
+          
+          if (createdAt >= from && createdAt <= to) {
+            const sessionId = doc.id;
+            total += sessionTotals[sessionId] || 0;
+            profit += sessionProfits[sessionId] || 0;
+          }
+        });
+      }
 
       setOrdersTotal(total);
       setOrdersProfitTotal(profit);
     } catch (error) {
       console.error("Error fetching order sessions:", error);
     }
-  };
+  }, [from, to, presetFilter]);
+
+  const fetchBilliardsTotal = useCallback(async () => {
+    try {
+      const q = query(collection(db, "sessions"));
+      const snap = await getDocs(q);
+      let total = 0;
+      snap.forEach((doc) => {
+        const data = doc.data();
+        const start = data.start_time?.toDate?.() || new Date(data.start_time);
+        if (start >= from && start <= to && data.pay_status) {
+          total += parseFloat(data.total_price || 0);
+        }
+      });
+      setBilliardsTotal(total);
+    } catch (e) {
+      console.error("Error fetching billiards sessions:", e);
+    }
+  }, [from, to]);
+
+  const fetchTournamentsFinancials = useCallback(async () => {
+    try {
+      const snap = await getDocs(collection(db, "tournaments"));
+      let total = 0;
+
+      snap.forEach(doc => {
+        const data = doc.data();
+        const createdAt = data.created_at?.toDate?.() || new Date(data.created_at);
+        if (createdAt >= from && createdAt <= to) {
+          const subscriptionFee = Number(data.subscriptionFee || 0);
+          const participants = data.participants || [];
+          const paidParticipants = participants.filter(p => p.paid).length;
+          const prizes = data.prizes || [];
+          const totalPrizes = prizes.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+          const income = paidParticipants * subscriptionFee;
+          const profit = income - totalPrizes;
+          total += profit;
+        }
+      });
+
+      setTournamentTotal(total);
+    } catch (error) {
+      console.error("Error fetching tournaments financials:", error);
+    }
+  }, [from, to]);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    await Promise.all([fetchOrdersTotal(), fetchBilliardsTotal(), fetchTournamentsFinancials(),fetchExpensesTotal(),]);
+    setIsLoading(false);
+  }, [fetchOrdersTotal, fetchBilliardsTotal, fetchTournamentsFinancials, fetchExpensesTotal]);
+
+  useEffect(() => {
+    fetchOrderItemsTotal();
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+
 
   const fetchOrderItemsTotal = async () => {
     try {
@@ -160,60 +247,10 @@ export default function MainPage() {
     }
   };
 
-  const fetchBilliardsTotal = async () => {
-    try {
-      const q = query(collection(db, "sessions"));
-      const snap = await getDocs(q);
-      let total = 0;
-      snap.forEach((doc) => {
-        const data = doc.data();
-        const start = data.start_time?.toDate?.() || new Date(data.start_time);
-        if (start >= from && start <= to && data.pay_status) {
-          total += parseFloat(data.total_price || 0);
-        }
-      });
-      setBilliardsTotal(total);
-    } catch (e) {
-      console.error("Error fetching billiards sessions:", e);
-    }
-  };
-
-  const fetchTournamentsFinancials = async () => {
-  try {
-    const snap = await getDocs(collection(db, "tournaments"));
-    let total = 0;
-
-    snap.forEach(doc => {
-      const data = doc.data();
-      const createdAt = data.created_at?.toDate?.() || new Date(data.created_at);
-      if (createdAt >= from && createdAt <= to) {
-        const subscriptionFee = Number(data.subscriptionFee || 0);
-        const participants = data.participants || [];
-        const paidParticipants = participants.filter(p => p.paid).length;
-        const prizes = data.prizes || [];
-        const totalPrizes = prizes.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-        const income = paidParticipants * subscriptionFee;
-        const profit = income - totalPrizes;
-        total += profit;
-      }
-    });
-
-    setTournamentTotal(total);
-  } catch (error) {
-    console.error("Error fetching tournaments financials:", error);
-  }
-};
 
 
-  const getFilterDisplayName = () => {
-    switch (filter) {
-      case "today": return "اليوم";
-      case "week": return "آخر أسبوع";
-      case "month": return "آخر شهر";
-      case "custom": return customFrom && customTo ? `${customFrom} - ${customTo}` : "مخصص";
-      default: return "اليوم";
-    }
-  };
+
+
 
   const totalRevenue = ordersTotal + billiardsTotal + tournamentTotal;
   const totalProfit = ordersProfitTotal + billiardsTotal + tournamentTotal; // البلياردو والبطولات نعتبرهم ربح صافي
@@ -320,7 +357,11 @@ export default function MainPage() {
   };
 
   const sectionStyle = {
-    marginBottom: '32px'
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    padding: '24px',
+    marginBottom: '24px',
+    border: '1px solid #e2e8f0'
   };
 
   const sectionTitleStyle = {
@@ -331,72 +372,7 @@ export default function MainPage() {
     padding: '0 4px'
   };
 
-  const filterSectionStyle = {
-    backgroundColor: 'white',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    padding: '24px'
-  };
 
-  const filterGridStyle = {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '12px',
-    marginBottom: '24px'
-  };
-
-  const getFilterButtonStyle = (isActive) => ({
-    padding: '16px',
-    border: `2px solid ${isActive ? '#A2AF9B' : '#e2e8f0'}`,
-    backgroundColor: isActive ? '#f0f4f0' : 'white',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    textAlign: 'center'
-  });
-
-  const filterButtonTextStyle = {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#1e293b',
-    margin: '0 0 4px 0'
-  };
-
-  const filterButtonDescStyle = {
-    fontSize: '12px',
-    color: '#64748b',
-    margin: 0
-  };
-
-  const customDateStyle = {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '16px',
-    padding: '20px',
-    backgroundColor: '#f8fafc',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px'
-  };
-
-  const dateInputGroupStyle = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  };
-
-  const dateInputLabelStyle = {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#374151'
-  };
-
-  const dateInputStyle = {
-    padding: '12px',
-    border: '1px solid #d1d5db',
-    borderRadius: '6px',
-    fontSize: '14px',
-    backgroundColor: 'white'
-  };
 
   const statsGridStyle = {
     display: 'grid',
@@ -653,55 +629,21 @@ export default function MainPage() {
         </div>
       </header>
 
+
+
       {/* Main Content */}
       <main style={mainContentStyle}>
         
+        {/* Session Control Section */}
+        <section style={sectionStyle}>
+          <SessionControl />
+        </section>
+
         {/* Filter Section */}
         <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>فلترة البيانات</h2>
-          <div style={filterSectionStyle}>
-            <div style={filterGridStyle}>
-              {[
-                { key: "today", label: "اليوم", desc: "مبيعات اليوم الحالي" },
-                { key: "week", label: "الأسبوع", desc: "آخر 7 أيام" },
-                { key: "month", label: "الشهر", desc: "آخر 30 يوم" },
-                { key: "custom", label: "مخصص", desc: "فترة محددة" }
-              ].map((filterOption) => (
-                <button
-                  key={filterOption.key}
-                  onClick={() => setFilter(filterOption.key)}
-                  style={getFilterButtonStyle(filter === filterOption.key)}
-                  className="filter-hover"
-                >
-                  <h3 style={filterButtonTextStyle}>{filterOption.label}</h3>
-                  <p style={filterButtonDescStyle}>{filterOption.desc}</p>
-                </button>
-              ))}
-            </div>
-
-            {filter === "custom" && (
-              <div style={customDateStyle}>
-                <div style={dateInputGroupStyle}>
-                  <label style={dateInputLabelStyle}>تاريخ البداية</label>
-                  <input
-                    type="date"
-                    value={customFrom}
-                    onChange={(e) => setCustomFrom(e.target.value)}
-                    style={dateInputStyle}
-                  />
-                </div>
-                <div style={dateInputGroupStyle}>
-                  <label style={dateInputLabelStyle}>تاريخ النهاية</label>
-                  <input
-                    type="date"
-                    value={customTo}
-                    onChange={(e) => setCustomTo(e.target.value)}
-                    style={dateInputStyle}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
+          <SessionBrowser />
+          <DateRangeSelector />
         </section>
 
         {/* Stats Section */}
@@ -709,7 +651,7 @@ export default function MainPage() {
           <h2 style={sectionTitleStyle}>إحصائيات المبيعات</h2>
           <div style={statsGridStyle}>
             {/* Orders Card */}
-            <div style={cardStyle} className="card-hover">
+            <div style={cardStyle} >
               <div style={cardHeaderStyle}>
                 <div style={cardIconSectionStyle}>
                   <div style={cardIconStyle}>
@@ -748,7 +690,7 @@ export default function MainPage() {
             </div>
 
             {/* Billiards Card */}
-            <div style={cardStyle} className="card-hover">
+            <div style={cardStyle} >
               <div style={cardHeaderStyle}>
                 <div style={cardIconSectionStyle}>
                   <div style={cardIconStyle}>
@@ -788,7 +730,7 @@ export default function MainPage() {
             </div>
 
             {/* Tournaments Card */}
-            <div style={cardStyle} className="card-hover">
+            <div style={cardStyle} >
               <div style={cardHeaderStyle}>
                 <div style={cardIconSectionStyle}>
                   <div style={cardIconStyle}>
@@ -826,7 +768,7 @@ export default function MainPage() {
             </div>
 
             {/* Sales Profit Card */}
-            <div style={cardStyle} className="card-hover">
+            <div style={cardStyle} >
               <div style={cardHeaderStyle}>
                 <div style={cardIconSectionStyle}>
                   <div style={cardIconStyle}>
@@ -867,7 +809,7 @@ export default function MainPage() {
             </div>
 
             {/* Grand Total Revenue Card */}
-            <div style={cardStyle} className="card-hover">
+            <div style={cardStyle} >
               <div style={cardHeaderStyle}>
                 <div style={cardIconSectionStyle}>
                   <div style={cardIconStyle}>
@@ -906,7 +848,7 @@ export default function MainPage() {
             </div>
 
             {/* Total Profit Card */}
-            <div style={cardStyle} className="card-hover">
+            <div style={cardStyle} >
               <div style={cardHeaderStyle}>
                 <div style={cardIconSectionStyle}>
                   <div style={cardIconStyle}>
@@ -947,7 +889,7 @@ export default function MainPage() {
               </div>
             </div>
             {/* Expenses Card */}
-<div style={cardStyle} className="card-hover">
+<div style={cardStyle} >
   <div style={cardHeaderStyle}>
     <div style={cardIconSectionStyle}>
       <div style={{ ...cardIconStyle, backgroundColor: '#EF4444' }}>
@@ -975,7 +917,7 @@ export default function MainPage() {
     <div style={footerItemStyle}>
       <p style={footerLabelStyle}>الفترة</p>
       <p style={footerValueStyle}>
-        {filter === "custom" && customFrom && customTo ? `${customFrom} → ${customTo}` : getFilterDisplayName()}
+        {getFilterDisplayName()}
       </p>
     </div>
     <div style={footerItemStyle}>
@@ -988,7 +930,7 @@ export default function MainPage() {
 </div>
 
 {/* Net Profit Card */}
-<div style={{ ...cardStyle, backgroundColor: '#0ea5e9', border: '1px solid #0284c7', color: 'white' }} className="card-hover">
+<div style={{ ...cardStyle, backgroundColor: '#0ea5e9', border: '1px solid #0284c7', color: 'white' }} >
   <div style={cardHeaderStyle}>
     <div style={cardIconSectionStyle}>
       <div style={{ ...cardIconStyle, backgroundColor: 'rgba(255,255,255,0.2)' }}>
@@ -1024,6 +966,9 @@ export default function MainPage() {
     </div>
   </div>
 </div>
+
+{/* Cash Flow Card - Only shows when in session mode with initial cash */}
+<CashFlowCard totalRevenue={totalRevenue} expensesTotal={expensesTotal} />
 
           </div>
         </section>

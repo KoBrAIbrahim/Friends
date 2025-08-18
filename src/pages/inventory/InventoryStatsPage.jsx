@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../services/firebase";
+import { useDateRange } from "../../contexts/DateRangeContext";
 import { 
   BarChart3, 
   Package, 
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 
 export default function InventoryStatsPage() {
+  const { getFilterDisplayName } = useDateRange();
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -525,7 +527,7 @@ export default function InventoryStatsPage() {
             </div>
             <div>
               <h1 style={styles.title}>إحصائيات المستودع</h1>
-              <p style={styles.subtitle}>تحليل شامل لبيانات المخزون والأرباح</p>
+              <p style={styles.subtitle}>تحليل شامل لبيانات المخزون والأرباح (المستوى الحالي للمخزون)</p>
             </div>
           </div>
           <button
