@@ -2,6 +2,11 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLocation } from "react-router-dom"
 
+/**
+ * رأس صفحة البلياردو
+ * تم إصلاح مشكلة JSX attribute
+ */
+
 const tabs = [
   { label: "الرئيسية", path: "/billiards", icon: "🎱", shortLabel: "الرئيسية" },
   { label: "تعديل الطلبات", path: "/billiards/edit-orders", icon: "🧾", shortLabel: "الطلبات" },
@@ -187,7 +192,7 @@ export default function BilliardsSubHeader() {
       )}
 
       {/* Simple CSS for scrollbar hiding */}
-      <style jsx>{`
+      <style>{`
         /* Hide scrollbar for mobile horizontal scroll */
         div::-webkit-scrollbar {
           display: none;

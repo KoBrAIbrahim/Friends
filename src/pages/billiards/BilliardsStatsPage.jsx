@@ -125,12 +125,7 @@ export default function BilliardsStatsPage() {
     textAlign: "center"
   };
 
-  const filtersGridStyle = {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-    gap: "24px",
-    alignItems: "end"
-  };
+
 
   const filterGroupStyle = {
     display: "flex",

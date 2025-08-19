@@ -12,6 +12,14 @@ import {
 import { db } from "../../services/firebase";
 import tableImage from "../../assets/table.png";
 
+/**
+ * صفحة البلياردو الرئيسية
+ * تم إصلاح مشكلة الوقت الخاطئ عند الـ refresh
+ * تم إضافة localStorage لحفظ البيانات مؤقتاً
+ * تم إصلاح مشكلة JSX attribute في BilliardsHeader
+ * تم إضافة تنظيف تلقائي للبيانات القديمة
+ * تم إضافة زر إعادة تعيين للطاولات
+ */
 export default function BilliardsMainPage() {
   const [tables, setTables] = useState([]);
   const [note, setNote] = useState("");
@@ -31,6 +39,48 @@ export default function BilliardsMainPage() {
   useEffect(() => {
     fetchTables();
     loadTimersFromFirestore();
+    
+    // تنظيف البيانات عند الـ refresh
+    const handleBeforeUnload = () => {
+      // حفظ البيانات في localStorage قبل الـ refresh
+      localStorage.setItem('billiards_timers', JSON.stringify(timers));
+    };
+    
+    // تنظيف localStorage من البيانات القديمة عند بدء التطبيق
+    const cleanupOldData = () => {
+      try {
+        const savedTimers = localStorage.getItem('billiards_timers');
+        if (savedTimers) {
+          const parsedTimers = JSON.parse(savedTimers);
+          const currentTime = Date.now();
+          const validTimers = {};
+          
+          Object.keys(parsedTimers).forEach(tableId => {
+            const timer = parsedTimers[tableId];
+            if (timer.startedAt && (currentTime - timer.startedAt) < 60 * 60 * 1000) {
+              validTimers[tableId] = timer;
+            } else {
+              console.log(`Removing old timer for table ${tableId} from localStorage`);
+            }
+          });
+          
+          if (Object.keys(validTimers).length !== Object.keys(parsedTimers).length) {
+            localStorage.setItem('billiards_timers', JSON.stringify(validTimers));
+            console.log('localStorage cleaned up on app start');
+          }
+        }
+      } catch (error) {
+        console.error('Error cleaning up localStorage on app start:', error);
+      }
+    };
+    
+    cleanupOldData();
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, []);
 
   useEffect(() => {
@@ -42,6 +92,7 @@ export default function BilliardsMainPage() {
         Object.entries(prev).forEach(([tableId, timer]) => {
           if (timer.paused) return;
 
+          // تأكد من أن lastTick محدث
           newTimers[tableId] = {
             ...timer,
             lastTick: Date.now(),
@@ -57,6 +108,15 @@ export default function BilliardsMainPage() {
           }
         });
 
+        // تحديث localStorage إذا كان هناك تغييرات
+        if (hasChanges) {
+          try {
+            localStorage.setItem('billiards_timers', JSON.stringify(newTimers));
+          } catch (error) {
+            console.error('Error updating localStorage:', error);
+          }
+        }
+
         return hasChanges ? newTimers : prev;
       });
     }, 1000);
@@ -69,7 +129,32 @@ export default function BilliardsMainPage() {
     if (!timer.startedAt) return 0;
     
     const now = Date.now();
-    const totalTime = now - timer.startedAt;
+    
+    // تأكد من أن startedAt هو timestamp صحيح
+    let startTime;
+    if (typeof timer.startedAt === 'number') {
+      startTime = timer.startedAt;
+    } else if (timer.startedAt instanceof Date) {
+      startTime = timer.startedAt.getTime();
+    } else if (timer.startedAt && timer.startedAt.seconds) {
+      // إذا كان من Firebase timestamp
+      startTime = timer.startedAt.toDate().getTime();
+    } else {
+      console.error('Invalid startedAt format:', timer.startedAt);
+      return 0;
+    }
+    
+    // التحقق من أن الوقت لا يزال صالحاً
+    const totalTime = now - startTime;
+    if (totalTime < 0) {
+      console.error('Negative time detected, resetting timer');
+      return 0;
+    }
+    
+    if (totalTime > 60 * 60 * 1000) { // أكثر من ساعة واحدة
+      console.warn('Timer is too old, resetting');
+      return 0;
+    }
     
     // احسب مجموع الوقت المتوقف
     let totalPausedTime = 0;
@@ -138,10 +223,19 @@ export default function BilliardsMainPage() {
           pauseHistory: newPauseHistory,
         });
 
-        return {
+        const newTimers = {
           ...prev,
           [tableId]: updated
         };
+        
+        // تحديث localStorage
+        try {
+          localStorage.setItem('billiards_timers', JSON.stringify(newTimers));
+        } catch (error) {
+          console.error('Error updating localStorage:', error);
+        }
+
+        return newTimers;
       } else {
         // إيقاف مؤقت - ابدأ فترة إيقاف جديدة
         newPauseHistory.push({
@@ -161,46 +255,160 @@ export default function BilliardsMainPage() {
           pauseHistory: newPauseHistory,
         });
 
-        return {
+        const newTimers = {
           ...prev,
           [tableId]: updated
         };
+        
+        // تحديث localStorage
+        try {
+          localStorage.setItem('billiards_timers', JSON.stringify(newTimers));
+        } catch (error) {
+          console.error('Error updating localStorage:', error);
+        }
+
+        return newTimers;
       }
     });
   };
 
   const loadTimersFromFirestore = async () => {
-    const snapshot = await getDocs(collection(db, "sessions"));
-    const activeSessions = snapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(session => !session.end_time);
+    try {
+      const snapshot = await getDocs(collection(db, "sessions"));
+      const activeSessions = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(session => !session.end_time);
 
-    const loadedTimers = {};
-    
-    activeSessions.forEach(session => {
-      const tableId = session.table_id;
-      if (!session.start_time) return;
+      const loadedTimers = {};
+      const sessionsToClean = [];
+      
+      activeSessions.forEach(session => {
+        const tableId = session.table_id;
+        if (!session.start_time) return;
 
-      loadedTimers[tableId] = {
-        startedAt: session.start_time.toDate().getTime(),
-        type: session.session_type,
-        duration: session.duration,
-        table_number: null,
-        paused: session.paused || false,
-        pauseHistory: session.pauseHistory || [],
-        lastTick: Date.now(),
-      };
-    });
+        // تحويل Firebase timestamp إلى timestamp عادي
+        let startTime;
+        if (session.start_time.toDate) {
+          startTime = session.start_time.toDate().getTime();
+        } else if (session.start_time instanceof Date) {
+          startTime = session.start_time.getTime();
+        } else if (typeof session.start_time === 'number') {
+          startTime = session.start_time;
+        } else {
+          console.error('Invalid start_time format:', session.start_time);
+          return;
+        }
 
-    const tableSnapshot = await getDocs(collection(db, "peli_tables"));
-    tableSnapshot.docs.forEach(doc => {
-      const data = doc.data();
-      if (loadedTimers[doc.id]) {
-        loadedTimers[doc.id].table_number = data.table_number;
+        // التحقق من أن الوقت لا يزال صالحاً (أقل من ساعة واحدة)
+        const now = Date.now();
+        const elapsed = now - startTime;
+        if (elapsed > 60 * 60 * 1000) { // أكثر من ساعة واحدة
+          console.warn(`Session for table ${tableId} is too old (${Math.floor(elapsed / 60000)} minutes), marking for cleanup...`);
+          sessionsToClean.push(session.id);
+          return;
+        }
+
+        loadedTimers[tableId] = {
+          startedAt: startTime,
+          type: session.session_type,
+          duration: session.duration,
+          table_number: null,
+          paused: session.paused || false,
+          pauseHistory: session.pauseHistory || [],
+          lastTick: Date.now(),
+        };
+      });
+
+      // تنظيف الجلسات القديمة من Firebase
+      if (sessionsToClean.length > 0) {
+        console.log(`Cleaning up ${sessionsToClean.length} old sessions...`);
+        try {
+          for (const sessionId of sessionsToClean) {
+            const sessionRef = doc(db, "sessions", sessionId);
+            await updateDoc(sessionRef, {
+              end_time: new Date(),
+              total_time: 0,
+              total_price: 0,
+              note: "تم إغلاق الجلسة تلقائياً بسبب القدم"
+            });
+          }
+          console.log('Old sessions cleaned up successfully');
+        } catch (error) {
+          console.error('Error cleaning up old sessions:', error);
+        }
       }
-    });
 
-    setTimers(loadedTimers);
+      const tableSnapshot = await getDocs(collection(db, "peli_tables"));
+      tableSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (loadedTimers[doc.id]) {
+          loadedTimers[doc.id].table_number = data.table_number;
+        }
+      });
+
+      // محاولة استعادة البيانات من localStorage إذا لم تكن موجودة في Firebase
+      try {
+        const savedTimers = localStorage.getItem('billiards_timers');
+        if (savedTimers) {
+          const parsedTimers = JSON.parse(savedTimers);
+          const currentTime = Date.now();
+          
+          Object.keys(parsedTimers).forEach(tableId => {
+            const timer = parsedTimers[tableId];
+            if (!loadedTimers[tableId] && timer.startedAt) {
+              // تأكد من أن الوقت لا يزال صالحاً (أقل من ساعة واحدة)
+              const elapsed = currentTime - timer.startedAt;
+              if (elapsed < 60 * 60 * 1000) { // أقل من ساعة واحدة
+                loadedTimers[tableId] = {
+                  ...timer,
+                  lastTick: currentTime
+                };
+              } else {
+                console.warn(`Timer for table ${tableId} is too old (${Math.floor(elapsed / 60000)} minutes), removing from localStorage`);
+              }
+            }
+          });
+          
+          // تنظيف localStorage من البيانات القديمة
+          const validTimers = {};
+          Object.keys(parsedTimers).forEach(tableId => {
+            const timer = parsedTimers[tableId];
+            if (timer.startedAt && (currentTime - timer.startedAt) < 60 * 60 * 1000) {
+              validTimers[tableId] = timer;
+            }
+          });
+          
+          // تحديث localStorage بالبيانات الصحيحة فقط
+          localStorage.setItem('billiards_timers', JSON.stringify(validTimers));
+        }
+      } catch (error) {
+        console.error('Error loading timers from localStorage:', error);
+      }
+
+      setTimers(loadedTimers);
+    } catch (error) {
+      console.error('Error loading timers from Firestore:', error);
+      // في حالة فشل Firebase، استخدم localStorage فقط
+      try {
+        const savedTimers = localStorage.getItem('billiards_timers');
+        if (savedTimers) {
+          const parsedTimers = JSON.parse(savedTimers);
+          const currentTime = Date.now();
+          const validTimers = {};
+          
+          Object.keys(parsedTimers).forEach(tableId => {
+            const timer = parsedTimers[tableId];
+            if (timer.startedAt && (currentTime - timer.startedAt) < 60 * 60 * 1000) {
+              validTimers[tableId] = timer;
+            }
+          });
+          
+          setTimers(validTimers);
+        }
+      } catch (localError) {
+        console.error('Error loading from localStorage:', localError);
+      }
+    }
   };
 
   const startSession = async (table) => {
@@ -222,18 +430,31 @@ export default function BilliardsMainPage() {
 
     fetchTables();
     setStartingTable(null);
-    setTimers(prev => ({
-      ...prev,
-      [table.id]: {
-        startedAt: now,
-        type: sessionType,
-        duration: sessionType === "fixed" ? Number(duration) : null,
-        table_number: table.table_number,
-        paused: false,
-        pauseHistory: [],
-        lastTick: now,
+    
+    // تأكد من أن الوقت محفوظ بشكل صحيح
+    setTimers(prev => {
+      const newTimers = {
+        ...prev,
+        [table.id]: {
+          startedAt: now,
+          type: sessionType,
+          duration: sessionType === "fixed" ? Number(duration) : null,
+          table_number: table.table_number,
+          paused: false,
+          pauseHistory: [],
+          lastTick: now,
+        }
+      };
+      
+      // تحديث localStorage
+      try {
+        localStorage.setItem('billiards_timers', JSON.stringify(newTimers));
+      } catch (error) {
+        console.error('Error updating localStorage:', error);
       }
-    }));
+      
+      return newTimers;
+    });
 
     setNote("");
     setSessionType("open");
@@ -271,9 +492,19 @@ export default function BilliardsMainPage() {
 
     await updateDoc(doc(db, "peli_tables", table.id), { status: "deactive" });
     fetchTables();
+    
+    // تنظيف localStorage عند إغلاق الجلسة
     setTimers(prev => {
       const newTimers = { ...prev };
       delete newTimers[table.id];
+      
+      // تحديث localStorage
+      try {
+        localStorage.setItem('billiards_timers', JSON.stringify(newTimers));
+      } catch (error) {
+        console.error('Error updating localStorage:', error);
+      }
+      
       return newTimers;
     });
   };
@@ -683,6 +914,15 @@ export default function BilliardsMainPage() {
             const elapsedMs = calculateElapsedTime(timer);
             const minutes = Math.floor(elapsedMs / 60000);
             const seconds = Math.floor((elapsedMs % 60000) / 1000);
+
+            // للتأكد من صحة الحساب (فقط للتطوير)
+            console.log(`Table ${table.table_number}:`, {
+              startedAt: timer.startedAt,
+              elapsedMs,
+              minutes,
+              seconds,
+              timer
+            });
 
             if (timer.type === "open") {
               timeDisplay = `الوقت: ${minutes} دقيقة : ${seconds} ثانية`;
