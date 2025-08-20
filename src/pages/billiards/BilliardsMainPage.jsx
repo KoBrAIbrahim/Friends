@@ -46,35 +46,8 @@ export default function BilliardsMainPage() {
       localStorage.setItem('billiards_timers', JSON.stringify(timers));
     };
     
-    // تنظيف localStorage من البيانات القديمة عند بدء التطبيق
-    const cleanupOldData = () => {
-      try {
-        const savedTimers = localStorage.getItem('billiards_timers');
-        if (savedTimers) {
-          const parsedTimers = JSON.parse(savedTimers);
-          const currentTime = Date.now();
-          const validTimers = {};
-          
-          Object.keys(parsedTimers).forEach(tableId => {
-            const timer = parsedTimers[tableId];
-            if (timer.startedAt && (currentTime - timer.startedAt) < 60 * 60 * 1000) {
-              validTimers[tableId] = timer;
-            } else {
-              console.log(`Removing old timer for table ${tableId} from localStorage`);
-            }
-          });
-          
-          if (Object.keys(validTimers).length !== Object.keys(parsedTimers).length) {
-            localStorage.setItem('billiards_timers', JSON.stringify(validTimers));
-            console.log('localStorage cleaned up on app start');
-          }
-        }
-      } catch (error) {
-        console.error('Error cleaning up localStorage on app start:', error);
-      }
-    };
-    
-    cleanupOldData();
+    // تم إزالة تنظيف localStorage من البيانات القديمة
+    // جميع الجلسات محفوظة بدون حذف
     
     window.addEventListener('beforeunload', handleBeforeUnload);
     
@@ -151,10 +124,7 @@ export default function BilliardsMainPage() {
       return 0;
     }
     
-    if (totalTime > 60 * 60 * 1000) { // أكثر من ساعة واحدة
-      console.warn('Timer is too old, resetting');
-      return 0;
-    }
+    // تم إزالة التحقق من القدم - الجلسات لن تُغلق تلقائياً
     
     // احسب مجموع الوقت المتوقف
     let totalPausedTime = 0;
@@ -280,7 +250,6 @@ export default function BilliardsMainPage() {
         .filter(session => !session.end_time);
 
       const loadedTimers = {};
-      const sessionsToClean = [];
       
       activeSessions.forEach(session => {
         const tableId = session.table_id;
@@ -299,14 +268,7 @@ export default function BilliardsMainPage() {
           return;
         }
 
-        // التحقق من أن الوقت لا يزال صالحاً (أقل من ساعة واحدة)
-        const now = Date.now();
-        const elapsed = now - startTime;
-        if (elapsed > 60 * 60 * 1000) { // أكثر من ساعة واحدة
-          console.warn(`Session for table ${tableId} is too old (${Math.floor(elapsed / 60000)} minutes), marking for cleanup...`);
-          sessionsToClean.push(session.id);
-          return;
-        }
+        // تم إزالة التحقق من القدم - الجلسات لن تُغلق تلقائياً
 
         loadedTimers[tableId] = {
           startedAt: startTime,
@@ -319,24 +281,7 @@ export default function BilliardsMainPage() {
         };
       });
 
-      // تنظيف الجلسات القديمة من Firebase
-      if (sessionsToClean.length > 0) {
-        console.log(`Cleaning up ${sessionsToClean.length} old sessions...`);
-        try {
-          for (const sessionId of sessionsToClean) {
-            const sessionRef = doc(db, "sessions", sessionId);
-            await updateDoc(sessionRef, {
-              end_time: new Date(),
-              total_time: 0,
-              total_price: 0,
-              note: "تم إغلاق الجلسة تلقائياً بسبب القدم"
-            });
-          }
-          console.log('Old sessions cleaned up successfully');
-        } catch (error) {
-          console.error('Error cleaning up old sessions:', error);
-        }
-      }
+      // تم إزالة التنظيف التلقائي للجلسات القديمة
 
       const tableSnapshot = await getDocs(collection(db, "peli_tables"));
       tableSnapshot.docs.forEach(doc => {
@@ -356,30 +301,16 @@ export default function BilliardsMainPage() {
           Object.keys(parsedTimers).forEach(tableId => {
             const timer = parsedTimers[tableId];
             if (!loadedTimers[tableId] && timer.startedAt) {
-              // تأكد من أن الوقت لا يزال صالحاً (أقل من ساعة واحدة)
-              const elapsed = currentTime - timer.startedAt;
-              if (elapsed < 60 * 60 * 1000) { // أقل من ساعة واحدة
-                loadedTimers[tableId] = {
-                  ...timer,
-                  lastTick: currentTime
-                };
-              } else {
-                console.warn(`Timer for table ${tableId} is too old (${Math.floor(elapsed / 60000)} minutes), removing from localStorage`);
-              }
+              // تم إزالة التحقق من القدم - جميع الجلسات صالحة
+              loadedTimers[tableId] = {
+                ...timer,
+                lastTick: currentTime
+              };
             }
           });
           
-          // تنظيف localStorage من البيانات القديمة
-          const validTimers = {};
-          Object.keys(parsedTimers).forEach(tableId => {
-            const timer = parsedTimers[tableId];
-            if (timer.startedAt && (currentTime - timer.startedAt) < 60 * 60 * 1000) {
-              validTimers[tableId] = timer;
-            }
-          });
-          
-          // تحديث localStorage بالبيانات الصحيحة فقط
-          localStorage.setItem('billiards_timers', JSON.stringify(validTimers));
+          // تم إزالة تنظيف localStorage من البيانات القديمة
+          // جميع الجلسات محفوظة بدون حذف
         }
       } catch (error) {
         console.error('Error loading timers from localStorage:', error);
@@ -393,17 +324,8 @@ export default function BilliardsMainPage() {
         const savedTimers = localStorage.getItem('billiards_timers');
         if (savedTimers) {
           const parsedTimers = JSON.parse(savedTimers);
-          const currentTime = Date.now();
-          const validTimers = {};
-          
-          Object.keys(parsedTimers).forEach(tableId => {
-            const timer = parsedTimers[tableId];
-            if (timer.startedAt && (currentTime - timer.startedAt) < 60 * 60 * 1000) {
-              validTimers[tableId] = timer;
-            }
-          });
-          
-          setTimers(validTimers);
+          // تم إزالة التحقق من القدم - جميع الجلسات صالحة
+          setTimers(parsedTimers);
         }
       } catch (localError) {
         console.error('Error loading from localStorage:', localError);
