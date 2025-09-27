@@ -61,41 +61,49 @@ export default function BilliardsMainPage() {
       setTimers(prev => {
         const newTimers = { ...prev };
         let hasChanges = false;
-
+  
         Object.entries(prev).forEach(([tableId, timer]) => {
           if (timer.paused) return;
-
-          // تأكد من أن lastTick محدث
+  
+          // تحديث lastTick
           newTimers[tableId] = {
             ...timer,
             lastTick: Date.now(),
           };
           hasChanges = true;
-
+  
           if (timer.type === "fixed") {
             const elapsed = calculateElapsedTime(timer);
+  
             if (elapsed >= timer.duration * 60000 && !timer.alerted) {
-              showCustomAlert(`انتهى الوقت المحدد للطاولة رقم ${timer.table_number}`);
-              newTimers[tableId].alerted = true;
+              if (timer.table_number) {
+                showCustomAlert(`انتهى الوقت المحدد للطاولة رقم ${timer.table_number}`);
+              } else {
+                console.warn("Timer بدون table_number:", timer);
+              }
+              newTimers[tableId] = { ...newTimers[tableId], alerted: true };
+              hasChanges = true;
             }
+            
           }
         });
-
-        // تحديث localStorage إذا كان هناك تغييرات
+  
+        // تحديث localStorage إذا صار أي تغيير
         if (hasChanges) {
           try {
-            localStorage.setItem('billiards_timers', JSON.stringify(newTimers));
+            localStorage.setItem("billiards_timers", JSON.stringify(newTimers));
           } catch (error) {
-            console.error('Error updating localStorage:', error);
+            console.error("Error updating localStorage:", error);
           }
         }
-
+  
         return hasChanges ? newTimers : prev;
       });
     }, 1000);
-
+  
     return () => clearInterval(interval);
   }, []);
+  
 
   // دالة لحساب الوقت المنقضي
   const calculateElapsedTime = (timer) => {
