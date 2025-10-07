@@ -3,6 +3,7 @@ import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "../../services/firebase";
 import { useDateRange } from "../../contexts/DateRangeContext";
 import { useNavigate } from "react-router-dom";
+import PasswordDialog from "./PasswordDialog";
 
 export default function SessionBrowser() {
   const { setPresetFilter, setStartDate, setEndDate } = useDateRange();
@@ -11,6 +12,8 @@ export default function SessionBrowser() {
   const [loading, setLoading] = useState(false);
   const [selectedSession, setSelectedSession] = useState(null);
   const [showBrowser, setShowBrowser] = useState(false);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [passwordAction, setPasswordAction] = useState(null); // 'browser' or 'admin'
 
   useEffect(() => {
     if (showBrowser) {
@@ -236,7 +239,10 @@ export default function SessionBrowser() {
     <div style={containerStyle}>
       <div style={{ display: 'flex', gap: '12px' }}>
         <button
-          onClick={() => setShowBrowser(true)}
+          onClick={() => {
+            setPasswordAction('browser');
+            setShowPasswordDialog(true);
+          }}
           style={toggleButtonStyle}
           onMouseEnter={(e) => e.target.style.backgroundColor = '#8FA288'}
           onMouseLeave={(e) => e.target.style.backgroundColor = '#A2AF9B'}
@@ -246,7 +252,10 @@ export default function SessionBrowser() {
         </button>
         
         <button
-          onClick={() => navigate('/sessions')}
+          onClick={() => {
+            setPasswordAction('admin');
+            setShowPasswordDialog(true);
+          }}
           style={{
             ...toggleButtonStyle,
             backgroundColor: '#6366f1',
@@ -373,6 +382,25 @@ export default function SessionBrowser() {
           </div>
         </div>
       )}
+
+      {/* Password Dialog */}
+      <PasswordDialog
+        isOpen={showPasswordDialog}
+        onClose={() => {
+          setShowPasswordDialog(false);
+          setPasswordAction(null);
+        }}
+        onConfirm={() => {
+          setShowPasswordDialog(false);
+          if (passwordAction === 'browser') {
+            setShowBrowser(true);
+          } else if (passwordAction === 'admin') {
+            navigate('/sessions');
+          }
+          setPasswordAction(null);
+        }}
+        title={passwordAction === 'browser' ? "إدخال كلمة المرور لتصفح الجلسات" : "إدخال كلمة المرور للإدارة المتقدمة"}
+      />
     </div>
   );
 }

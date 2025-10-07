@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   collection,
   addDoc,
@@ -13,6 +13,7 @@ import {
   deleteDoc
 } from "firebase/firestore";
 import { db } from "../../services/firebase";
+import PasswordDialog from "../../components/common/PasswordDialog";
 
 export default function OrdersMainPage() {
   const [sessions, setSessions] = useState([]);
@@ -43,6 +44,10 @@ export default function OrdersMainPage() {
   const [partialPayment, setPartialPayment] = useState("");
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  
+  // Password protection states
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
 
   const styles = {
     container: {
@@ -680,10 +685,6 @@ export default function OrdersMainPage() {
   };
 
   useEffect(() => {
-    fetchSessions();
-  }, []);
-
-  useEffect(() => {
     if (showAddOrderModal) fetchInventory();
   }, [showAddOrderModal]);
 
@@ -711,7 +712,7 @@ export default function OrdersMainPage() {
     return { totalAmount, paidAmount, remainingAmount };
   };
 
-  const fetchSessions = async () => {
+  const fetchSessions = useCallback(async () => {
     const q = query(collection(db, "order_sessions"), where("is_closed", "==", false));
     const snap = await getDocs(q);
     const sessionsData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -742,7 +743,11 @@ export default function OrdersMainPage() {
     );
 
     setSessions(sessionsWithStatus);
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
 
   const fetchSessionOrders = async (sessionId) => {
     const q = query(collection(db, "order_items"), where("session_id", "==", sessionId));
@@ -928,14 +933,31 @@ export default function OrdersMainPage() {
   };
 
   const initiateDelete = (orderId, order) => {
-    setOrderToDelete({ id: orderId, order });
-    setDeleteTarget({ type: 'order', data: order });
-    setShowDeleteConfirm(true);
+    setPendingAction(() => () => {
+      setOrderToDelete({ id: orderId, order });
+      setDeleteTarget({ type: 'order', data: order });
+      setShowDeleteConfirm(true);
+    });
+    setShowPasswordDialog(true);
   };
 
   const initiateSessionDelete = (session) => {
-    setDeleteTarget({ type: 'session', data: session });
-    setShowDeleteConfirm(true);
+    setPendingAction(() => () => {
+      setDeleteTarget({ type: 'session', data: session });
+      setShowDeleteConfirm(true);
+    });
+    setShowPasswordDialog(true);
+  };
+
+  const initiateEditOrder = (order) => {
+    setPendingAction(() => () => {
+      setEditingOrder(order);
+      setEditedName(order.name);
+      setEditedPrice(order.sell_price.toString());
+      setEditedQty(order.quantity);
+      setShowEditModal(true);
+    });
+    setShowPasswordDialog(true);
   };
 
   const confirmDelete = async () => {
@@ -987,13 +1009,7 @@ export default function OrdersMainPage() {
     setDeleteTarget(null);
   };
 
-  const startEditOrder = (order) => {
-    setEditingOrder(order);
-    setEditedName(order.name);
-    setEditedPrice(order.sell_price.toString());
-    setEditedQty(order.quantity);
-    setShowEditModal(true);
-  };
+
 
   const cancelEdit = () => {
     setEditingOrder(null);
@@ -1305,7 +1321,7 @@ export default function OrdersMainPage() {
                       </button>
                     )}
                     <button 
-                      onClick={() => startEditOrder(order)}
+                      onClick={() => initiateEditOrder(order)}
                       style={{...styles.actionButton, ...styles.editButton}}
                     >
                       ✏️ تعديل
@@ -1625,6 +1641,23 @@ export default function OrdersMainPage() {
           ✅ {toastMessage}
         </div>
       )}
+
+      {/* Password Dialog for Protected Actions */}
+      <PasswordDialog
+        isOpen={showPasswordDialog}
+        onClose={() => {
+          setShowPasswordDialog(false);
+          setPendingAction(null);
+        }}
+        onConfirm={() => {
+          setShowPasswordDialog(false);
+          if (pendingAction) {
+            pendingAction();
+            setPendingAction(null);
+          }
+        }}
+        title="إدخال كلمة المرور للمتابعة"
+      />
     </div>
   );
 }

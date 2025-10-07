@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "../../services/firebase";
+import PasswordDialog from "../../components/common/PasswordDialog";
 
 export default function EditOrdersPage() {
   const [sessions, setSessions] = useState([]);
@@ -19,6 +20,7 @@ export default function EditOrdersPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [originalPrice, setOriginalPrice] = useState(0);
   const [showToast, setShowToast] = useState(false);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
 
   // Media query hook for responsive design
   const [isMobile, setIsMobile] = useState(false);
@@ -901,28 +903,29 @@ const handleUpdatePrice = async () => {
 
             <div style={inputGroupStyle}>
               <label style={labelStyle}>
-                السعر الأصلي المحفوظ
+                السعر الأصلي المحفوظ (غير قابل للتعديل)
               </label>
               <div style={{
                 ...pricePerPlayerDisplayStyle,
-                backgroundColor: "#f0f9ff",
-                borderColor: "#0ea5e9",
-                color: "#0ea5e9"
+                backgroundColor: "#f3f4f6",
+                borderColor: "#d1d5db",
+                color: "#6b7280"
               }}>
-                {originalPrice.toFixed(2)} شيقل (محفوظ)
+                {originalPrice.toFixed(2)} شيقل (محفوظ - غير قابل للتعديل)
               </div>
             </div>
 
             <div style={inputGroupStyle}>
               <label style={labelStyle}>
-                السعر الإجمالي المعدل (شيقل)
+                السعر الإجمالي المعدل (شيقل) - غير قابل للتعديل
               </label>
               <input
                 type="number"
                 step="0.01"
                 value={newPrice}
                 onChange={(e) => setNewPrice(e.target.value)}
-                style={inputStyle}
+                style={{...inputStyle, backgroundColor: "#f3f4f6", color: "#6b7280", cursor: "not-allowed"}}
+                disabled={true}
               />
             </div>
 
@@ -976,7 +979,7 @@ const handleUpdatePrice = async () => {
               </button>
 
               <button
-                onClick={() => setShowDeleteConfirm(true)}
+                onClick={() => setShowPasswordDialog(true)}
                 style={buttonStyle("delete")}
               >
                 حذف
@@ -1089,6 +1092,17 @@ const handleUpdatePrice = async () => {
       >
         ↑
       </button>
+
+      {/* Password Dialog for Delete Action */}
+      <PasswordDialog
+        isOpen={showPasswordDialog}
+        onClose={() => setShowPasswordDialog(false)}
+        onConfirm={() => {
+          setShowPasswordDialog(false);
+          setShowDeleteConfirm(true);
+        }}
+        title="إدخال كلمة المرور لحذف الجلسة"
+      />
     </div>
     </>
   );

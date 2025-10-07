@@ -13,6 +13,7 @@ import CashFlowCard from "../components/common/CashFlowCard";
 import SessionBrowser from "../components/common/SessionBrowser";
 
 
+
 export default function MainPage() {
   const { getDateRange, getFilterDisplayName, presetFilter } = useDateRange();
   const [ordersTotal, setOrdersTotal] = useState(0);
@@ -1041,6 +1042,8 @@ export default function MainPage() {
         </section>
 
       </main>
+
+
     </div>
   );
 }
